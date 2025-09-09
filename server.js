@@ -15,7 +15,7 @@ const ventaRoutes = require('./routes/ventaRoutes');
 const authRoutes = require('./routes/authRoutes');
 const facturaRoutes = require('./routes/facturaRoutes');
 const facturaHasConsecutivoRoutes = require('./routes/facturaHasConsecutivoRoutes');
-const eventoRoutes = require('./routes/eventoRoutes'); // ✅ corregido
+const eventoRoutes = require('./routes/eventoRoutes');
 
 // Cargar variables de entorno
 dotenv.config();
@@ -27,16 +27,35 @@ const { crearUsuarioAdmin } = require('./config/adminConfig');
 const app = express();
 
 // Middlewares
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173',                // desarrollo local con Vite
+  'https://ianmanagement.web.app',        // dominio Firebase Hosting
+  'https://ianmanagement.firebaseapp.com' // alias Firebase
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS bloqueado para este origen: ' + origin));
+  }
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Ruta de prueba para verificar que la API esté viva
+app.get('/health', (_, res) => {
+  res.send('OK');
+});
 
 // Rutas API
 app.use('/api/clientes', clienteRoutes);
 app.use('/api/consecutivos', consecutivoRoutes);
 app.use('/api/productos', productoRoutes);
 app.use('/api/ventas', ventaRoutes);
-app.use('/api/eventos', eventoRoutes); // ✅ corregido
+app.use('/api/eventos', eventoRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/facturas', facturaRoutes);
 app.use('/api/factura-consecutivo', facturaHasConsecutivoRoutes);
