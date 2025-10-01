@@ -7,6 +7,12 @@ const ventaSchema = mongoose.Schema(
       required: true,
       ref: 'FacturaHasConsecutivo',
     },
+    // Número de consecutivo asignado a la venta en el momento de creación
+    numeroConsecutivo: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
     cliente: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,

@@ -112,7 +112,7 @@ const createVenta = async (req, res) => {
       throw new Error('La relación factura-consecutivo no existe');
     }
     
-    // Incrementar el contador del consecutivo
+    // Incrementar el contador del consecutivo y usar el valor actualizado
     const consecutivoActualizado = await Consecutivo.findByIdAndUpdate(
       relacion.consecutivo._id,
       { $inc: { contador: 1 } },
@@ -122,6 +122,8 @@ const createVenta = async (req, res) => {
     // Crear venta
     const venta = await Venta.create({
       facturaHasConsecutivo,
+      // Guardar el número de consecutivo utilizado por esta venta
+      numeroConsecutivo: consecutivoActualizado?.contador ?? undefined,
       cliente,
       clienteTelefono,
       clienteDireccion,
