@@ -7,16 +7,16 @@ const {
   updateConsecutivo,
   deleteConsecutivo,
 } = require('../controllers/consecutivoController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
 // Rutas protegidas
 router.route('/')
-  .get(protect, getConsecutivos)
-  .post(protect, createConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), getConsecutivos)
+  .post(protect, authorizePerm('consecutivos', 'crear'), createConsecutivo);
 
 router.route('/:id')
-  .get(protect, getConsecutivoById)
-  .put(protect, updateConsecutivo)
-  .delete(protect, deleteConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), getConsecutivoById)
+  .put(protect, authorizePerm('consecutivos', 'editar'), updateConsecutivo)
+  .delete(protect, authorizePerm('consecutivos', 'eliminar'), deleteConsecutivo);
 
 module.exports = router;

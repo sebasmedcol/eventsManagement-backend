@@ -6,6 +6,12 @@ const facturaSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    ivaPorcentaje: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     consecutivo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Consecutivo',
@@ -14,6 +20,11 @@ const facturaSchema = mongoose.Schema(
     estado: {
       type: Boolean,
       default: true,
+    },
+    empresa: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Empresa',
+      required: true,
     },
   },
   {

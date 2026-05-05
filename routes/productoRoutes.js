@@ -7,16 +7,16 @@ const {
   updateProducto,
   deleteProducto,
 } = require('../controllers/productoController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
 // Rutas protegidas
 router.route('/')
-  .get(protect, getProductos)
-  .post(protect, createProducto);
+  .get(protect, authorizePerm('productos', 'ver'), getProductos)
+  .post(protect, authorizePerm('productos', 'crear'), createProducto);
 
 router.route('/:id')
-  .get(protect, getProductoById)
-  .put(protect, updateProducto)
-  .delete(protect, deleteProducto);
+  .get(protect, authorizePerm('productos', 'ver'), getProductoById)
+  .put(protect, authorizePerm('productos', 'editar'), updateProducto)
+  .delete(protect, authorizePerm('productos', 'eliminar'), deleteProducto);
 
 module.exports = router;

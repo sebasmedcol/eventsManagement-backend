@@ -7,16 +7,16 @@ const {
   updateFactura,
   deleteFactura,
 } = require('../controllers/facturaController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
 // Rutas protegidas
 router.route('/')
-  .get(protect, getFacturas)
-  .post(protect, createFactura);
+  .get(protect, authorizePerm('facturas', 'ver'), getFacturas)
+  .post(protect, authorizePerm('facturas', 'crear'), createFactura);
 
 router.route('/:id')
-  .get(protect, getFacturaById)
-  .put(protect, updateFactura)
-  .delete(protect, deleteFactura);
+  .get(protect, authorizePerm('facturas', 'ver'), getFacturaById)
+  .put(protect, authorizePerm('facturas', 'editar'), updateFactura)
+  .delete(protect, authorizePerm('facturas', 'eliminar'), deleteFactura);
 
 module.exports = router;

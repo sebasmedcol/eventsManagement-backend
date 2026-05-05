@@ -1,0 +1,71 @@
+const mongoose = require('mongoose');
+
+const empresaSchema = mongoose.Schema(
+  {
+    nombre: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 150,
+      unique: true,
+    },
+    nit: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 20,
+    },
+    direccion: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 200,
+    },
+    telefono: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 15,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      maxlength: 254,
+      unique: true,
+    },
+    plan: {
+      type: String,
+      default: 'default',
+      trim: true,
+      enum: ['default', 'free', 'basic', 'pro', 'premium', 'super'],
+    },
+    estado: {
+      type: Boolean,
+      default: true,
+    },
+    estadoAprobacion: {
+      type: String,
+      enum: ['pendiente', 'aprobada', 'rechazada'],
+      default: 'aprobada',
+    },
+    solicitudToken: {
+      type: String,
+      default: null,
+    },
+    solicitudExpira: {
+      type: Date,
+      default: null,
+    },
+    fechaCreacion: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+module.exports = mongoose.model('Empresa', empresaSchema);

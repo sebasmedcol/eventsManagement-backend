@@ -16,12 +16,15 @@ const authRoutes = require('./routes/authRoutes');
 const facturaRoutes = require('./routes/facturaRoutes');
 const facturaHasConsecutivoRoutes = require('./routes/facturaHasConsecutivoRoutes');
 const eventoRoutes = require('./routes/eventoRoutes');
+const usuarioRoutes = require('./routes/usuarioRoutes');
+const cotizacionRoutes = require('./routes/cotizacionRoutes');
+const empresaAdminRoutes = require('./routes/empresaAdminRoutes');
 
 // Cargar variables de entorno
 dotenv.config();
 
-// Crear usuario admin inicial
-const { crearUsuarioAdmin } = require('./config/adminConfig');
+// Crear usuarios iniciales (admin de tenant y superadmin)
+const { crearUsuarioAdmin, crearUsuarioSuperAdmin } = require('./config/adminConfig');
 
 // Inicializar Express
 const app = express();
@@ -59,6 +62,9 @@ app.use('/api/eventos', eventoRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/facturas', facturaRoutes);
 app.use('/api/factura-consecutivo', facturaHasConsecutivoRoutes);
+app.use('/api/usuarios', usuarioRoutes);
+app.use('/api/cotizaciones', cotizacionRoutes);
+app.use('/api/empresas-admin', empresaAdminRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);
@@ -73,6 +79,7 @@ mongoose
     
     // Crear usuario admin inicial si no existe
     crearUsuarioAdmin();
+    crearUsuarioSuperAdmin();
     
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en el puerto ${PORT} en modo ${process.env.NODE_ENV}`);

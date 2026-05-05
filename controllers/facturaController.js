@@ -8,7 +8,7 @@ const FacturaHasConsecutivo = require('../models/facturaHasConsecutivoModel');
  */
 const getFacturas = async (req, res) => {
   try {
-    const facturas = await Factura.find({}).populate('consecutivo');
+    const facturas = await Factura.find({ empresa: req.user.empresaId }).populate('consecutivo');
     res.json(facturas);
   } catch (error) {
     res.status(500).json({
@@ -25,7 +25,10 @@ const getFacturas = async (req, res) => {
  */
 const getFacturaById = async (req, res) => {
   try {
-    const factura = await Factura.findById(req.params.id).populate('consecutivo');
+    const factura = await Factura.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    }).populate('consecutivo');
 
     if (!factura) {
       res.status(404);
@@ -48,7 +51,7 @@ const getFacturaById = async (req, res) => {
  */
 const createFactura = async (req, res) => {
   try {
-    const { nombre, consecutivo } = req.body;
+    const { nombre, consecutivo, ivaPorcentaje } = req.body;
 
     // Validar datos de entrada
     if (!nombre || !consecutivo) {
@@ -56,16 +59,30 @@ const createFactura = async (req, res) => {
       throw new Error('Por favor ingrese todos los campos requeridos');
     }
 
+    if (ivaPorcentaje !== undefined && ivaPorcentaje !== null && ivaPorcentaje !== '') {
+      const ivaNum = Number(ivaPorcentaje);
+      if (Number.isNaN(ivaNum) || ivaNum < 0 || ivaNum > 100) {
+        res.status(400);
+        throw new Error('El IVA debe ser un porcentaje entre 0 y 100');
+      }
+    }
+
     // Crear factura
     const factura = await Factura.create({
       nombre,
+      ivaPorcentaje:
+        ivaPorcentaje === undefined || ivaPorcentaje === null || ivaPorcentaje === ''
+          ? 0
+          : Number(ivaPorcentaje),
       consecutivo,
+      empresa: req.user.empresaId,
     });
 
     // Crear relación en la tabla intermedia
     await FacturaHasConsecutivo.create({
       factura: factura._id,
       consecutivo,
+      empresa: req.user.empresaId,
     });
 
     res.status(201).json(factura);
@@ -84,15 +101,27 @@ const createFactura = async (req, res) => {
  */
 const updateFactura = async (req, res) => {
   try {
-    const factura = await Factura.findById(req.params.id);
+    const factura = await Factura.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!factura) {
       res.status(404);
       throw new Error('Factura no encontrada');
     }
 
-    const facturaActualizada = await Factura.findByIdAndUpdate(
-      req.params.id,
+    if (req.body.ivaPorcentaje !== undefined && req.body.ivaPorcentaje !== null && req.body.ivaPorcentaje !== '') {
+      const ivaNum = Number(req.body.ivaPorcentaje);
+      if (Number.isNaN(ivaNum) || ivaNum < 0 || ivaNum > 100) {
+        res.status(400);
+        throw new Error('El IVA debe ser un porcentaje entre 0 y 100');
+      }
+      req.body.ivaPorcentaje = ivaNum;
+    }
+
+    const facturaActualizada = await Factura.findOneAndUpdate(
+      { _id: req.params.id, empresa: req.user.empresaId },
       req.body,
       { new: true }
     );
@@ -122,7 +151,10 @@ const updateFactura = async (req, res) => {
  */
 const deleteFactura = async (req, res) => {
   try {
-    const factura = await Factura.findById(req.params.id);
+    const factura = await Factura.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!factura) {
       res.status(404);

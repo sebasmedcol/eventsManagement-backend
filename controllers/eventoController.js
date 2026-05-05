@@ -11,7 +11,8 @@ const getEventos = async (req, res) => {
 
     const filter = {
       fechaDelEvento: { $ne: null },
-      estado: true,
+      estado: 'activa',
+      empresa: req.user.empresaId,
     };
 
     if (from || to) {
@@ -62,7 +63,10 @@ const getEventos = async (req, res) => {
  */
 const getEventoById = async (req, res) => {
   try {
-    const venta = await Venta.findOne({ _id: req.params.id })
+    const venta = await Venta.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    })
       .populate('cliente', 'nombreCompleto telefono direccion')
       .populate({
         path: 'facturaHasConsecutivo',
@@ -81,7 +85,7 @@ const getEventoById = async (req, res) => {
       return res.status(400).json({ message: 'La venta no tiene fecha de evento asignada' });
     }
 
-    if (!venta.estado) {
+    if (venta.estado !== 'activa') {
       return res.status(404).json({ message: 'El evento está cancelado y no se muestra' });
     }
 

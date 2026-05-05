@@ -14,6 +14,11 @@ const consecutivoSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    empresa: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Empresa',
+      required: true,
+    },
   },
   {
     timestamps: true,

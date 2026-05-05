@@ -7,7 +7,7 @@ const FacturaHasConsecutivo = require('../models/facturaHasConsecutivoModel');
  */
 const getFacturaHasConsecutivos = async (req, res) => {
   try {
-    const relaciones = await FacturaHasConsecutivo.find({})
+    const relaciones = await FacturaHasConsecutivo.find({ empresa: req.user.empresaId })
       .populate('factura')
       .populate('consecutivo');
     res.json(relaciones);
@@ -26,7 +26,10 @@ const getFacturaHasConsecutivos = async (req, res) => {
  */
 const getFacturaHasConsecutivoById = async (req, res) => {
   try {
-    const relacion = await FacturaHasConsecutivo.findById(req.params.id)
+    const relacion = await FacturaHasConsecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    })
       .populate('factura')
       .populate('consecutivo');
 
@@ -60,7 +63,10 @@ const createFacturaHasConsecutivo = async (req, res) => {
     }
 
     // Verificar si ya existe una relación para esta factura
-    const relacionExistente = await FacturaHasConsecutivo.findOne({ factura });
+    const relacionExistente = await FacturaHasConsecutivo.findOne({
+      factura,
+      empresa: req.user.empresaId,
+    });
     if (relacionExistente) {
       res.status(400);
       throw new Error('Esta factura ya tiene un consecutivo asignado');
@@ -70,6 +76,7 @@ const createFacturaHasConsecutivo = async (req, res) => {
     const relacion = await FacturaHasConsecutivo.create({
       factura,
       consecutivo,
+      empresa: req.user.empresaId,
     });
 
     res.status(201).json(relacion);
@@ -88,15 +95,18 @@ const createFacturaHasConsecutivo = async (req, res) => {
  */
 const updateFacturaHasConsecutivo = async (req, res) => {
   try {
-    const relacion = await FacturaHasConsecutivo.findById(req.params.id);
+    const relacion = await FacturaHasConsecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!relacion) {
       res.status(404);
       throw new Error('Relación no encontrada');
     }
 
-    const relacionActualizada = await FacturaHasConsecutivo.findByIdAndUpdate(
-      req.params.id,
+    const relacionActualizada = await FacturaHasConsecutivo.findOneAndUpdate(
+      { _id: req.params.id, empresa: req.user.empresaId },
       req.body,
       { new: true }
     );
@@ -117,7 +127,10 @@ const updateFacturaHasConsecutivo = async (req, res) => {
  */
 const deleteFacturaHasConsecutivo = async (req, res) => {
   try {
-    const relacion = await FacturaHasConsecutivo.findById(req.params.id);
+    const relacion = await FacturaHasConsecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!relacion) {
       res.status(404);

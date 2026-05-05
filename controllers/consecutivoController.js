@@ -7,7 +7,7 @@ const Consecutivo = require('../models/consecutivoModel');
  */
 const getConsecutivos = async (req, res) => {
   try {
-    const consecutivos = await Consecutivo.find({});
+    const consecutivos = await Consecutivo.find({ empresa: req.user.empresaId });
     res.json(consecutivos);
   } catch (error) {
     res.status(500).json({
@@ -24,7 +24,10 @@ const getConsecutivos = async (req, res) => {
  */
 const getConsecutivoById = async (req, res) => {
   try {
-    const consecutivo = await Consecutivo.findById(req.params.id);
+    const consecutivo = await Consecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!consecutivo) {
       res.status(404);
@@ -58,6 +61,7 @@ const createConsecutivo = async (req, res) => {
     // Crear consecutivo
     const consecutivo = await Consecutivo.create({
       contador,
+      empresa: req.user.empresaId,
     });
 
     res.status(201).json(consecutivo);
@@ -76,15 +80,18 @@ const createConsecutivo = async (req, res) => {
  */
 const updateConsecutivo = async (req, res) => {
   try {
-    const consecutivo = await Consecutivo.findById(req.params.id);
+    const consecutivo = await Consecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!consecutivo) {
       res.status(404);
       throw new Error('Consecutivo no encontrado');
     }
 
-    const consecutivoActualizado = await Consecutivo.findByIdAndUpdate(
-      req.params.id,
+    const consecutivoActualizado = await Consecutivo.findOneAndUpdate(
+      { _id: req.params.id, empresa: req.user.empresaId },
       req.body,
       { new: true }
     );
@@ -105,7 +112,10 @@ const updateConsecutivo = async (req, res) => {
  */
 const deleteConsecutivo = async (req, res) => {
   try {
-    const consecutivo = await Consecutivo.findById(req.params.id);
+    const consecutivo = await Consecutivo.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
 
     if (!consecutivo) {
       res.status(404);

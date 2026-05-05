@@ -54,6 +54,14 @@ const ventaSchema = mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    fechaInicio: {
+      type: Date,
+      required: true,
+    },
+    fechaFin: {
+      type: Date,
+      required: true,
+    },
     tipoDeServicio: {
       type: String,
       required: [true, 'Por favor ingrese el tipo de servicio'],
@@ -64,12 +72,39 @@ const ventaSchema = mongoose.Schema(
     fechaDelEvento: {
       type: Date,
     },
+    eventoInicio: {
+      type: Date,
+    },
+    eventoFin: {
+      type: Date,
+    },
+    soloCobrarTiempoEvento: {
+      type: Boolean,
+      default: false,
+    },
+    loadInInicio: {
+      type: Date,
+    },
+    loadOutFin: {
+      type: Date,
+    },
     subtotal: {
       type: Number,
       required: true,
       min: 0,
     },
     descuento: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    ivaPorcentaje: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    ivaValor: {
       type: Number,
       default: 0,
       min: 0,
@@ -84,14 +119,28 @@ const ventaSchema = mongoose.Schema(
       required: true,
       min: 0,
     },
+    saldoPendiente: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     estado: {
-      type: Boolean,
-      default: true,
+      type: String,
+      enum: ['activa', 'cancelada'],
+      default: 'activa',
+    },
+    empresa: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Empresa',
+      required: true,
     },
   },
   {
     timestamps: true,
   }
 );
+
+ventaSchema.index({ empresa: 1, fechaInicio: 1, fechaFin: 1 });
+ventaSchema.index({ 'productos.producto': 1 });
 
 module.exports = mongoose.model('Venta', ventaSchema);

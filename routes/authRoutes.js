@@ -1,12 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const { loginUsuario, getMe } = require('../controllers/authController');
+const {
+  register,
+  loginUsuario,
+  getMe,
+  checkEmpresaNombre,
+  checkNombreUsuario,
+} = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
 
-// Ruta para login
+router.get('/disponibilidad/empresa', checkEmpresaNombre);
+router.get('/disponibilidad/usuario', checkNombreUsuario);
+router.post('/register', register);
 router.post('/login', loginUsuario);
-
-// Ruta para obtener datos del usuario actual (protegida)
 router.get('/me', protect, getMe);
 
 module.exports = router;

@@ -7,16 +7,16 @@ const {
   updateCliente,
   deleteCliente,
 } = require('../controllers/clienteController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
 // Rutas protegidas
 router.route('/')
-  .get(protect, getClientes)
-  .post(protect, createCliente);
+  .get(protect, authorizePerm('clientes', 'ver'), getClientes)
+  .post(protect, authorizePerm('clientes', 'crear'), createCliente);
 
 router.route('/:id')
-  .get(protect, getClienteById)
-  .put(protect, updateCliente)
-  .delete(protect, deleteCliente);
+  .get(protect, authorizePerm('clientes', 'ver'), getClienteById)
+  .put(protect, authorizePerm('clientes', 'editar'), updateCliente)
+  .delete(protect, authorizePerm('clientes', 'eliminar'), deleteCliente);
 
 module.exports = router;

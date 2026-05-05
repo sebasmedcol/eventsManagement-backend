@@ -7,16 +7,16 @@ const {
   updateFacturaHasConsecutivo,
   deleteFacturaHasConsecutivo,
 } = require('../controllers/facturaHasConsecutivoController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
 // Rutas protegidas
 router.route('/')
-  .get(protect, getFacturaHasConsecutivos)
-  .post(protect, createFacturaHasConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), getFacturaHasConsecutivos)
+  .post(protect, authorizePerm('consecutivos', 'editar'), createFacturaHasConsecutivo);
 
 router.route('/:id')
-  .get(protect, getFacturaHasConsecutivoById)
-  .put(protect, updateFacturaHasConsecutivo)
-  .delete(protect, deleteFacturaHasConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), getFacturaHasConsecutivoById)
+  .put(protect, authorizePerm('consecutivos', 'editar'), updateFacturaHasConsecutivo)
+  .delete(protect, authorizePerm('consecutivos', 'eliminar'), deleteFacturaHasConsecutivo);
 
 module.exports = router;
