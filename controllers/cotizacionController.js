@@ -43,16 +43,24 @@ const getCotizacionById = async (req, res) => {
 
 const createCotizacion = async (req, res) => {
   try {
-    const { cliente, productos, total, estado } = req.body;
+    const { cliente, tipoDeServicio, productos, total, estado } = req.body;
 
-    if (!cliente || !productos || !Array.isArray(productos) || productos.length === 0 || total == null) {
+    if (
+      !cliente ||
+      !tipoDeServicio ||
+      !productos ||
+      !Array.isArray(productos) ||
+      productos.length === 0 ||
+      total == null
+    ) {
       res.status(400);
-      throw new Error('Por favor ingrese cliente, productos y total');
+      throw new Error('Por favor ingrese cliente, tipoDeServicio, productos y total');
     }
 
     const cotizacion = await Cotizacion.create({
       empresa: req.user.empresaId,
       cliente,
+      tipoDeServicio,
       productos,
       total,
       estado: estado || 'borrador',
@@ -83,9 +91,15 @@ const updateCotizacion = async (req, res) => {
       throw new Error('Cotización no encontrada');
     }
 
+    const tipoDeServicioFinal = req.body?.tipoDeServicio ?? cotizacion.tipoDeServicio;
+    if (!tipoDeServicioFinal) {
+      res.status(400);
+      throw new Error('tipoDeServicio es obligatorio');
+    }
+
     const cotizacionActualizada = await Cotizacion.findOneAndUpdate(
       { _id: req.params.id, empresa: req.user.empresaId },
-      req.body,
+      { ...req.body, tipoDeServicio: tipoDeServicioFinal },
       { new: true }
     )
       .populate('cliente', 'nombreCompleto telefono direccion')

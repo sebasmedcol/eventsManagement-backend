@@ -12,6 +12,15 @@ const cotizacionSchema = mongoose.Schema(
       ref: 'Cliente',
       required: true,
     },
+    tipoDeServicio: {
+      type: String,
+      enum: ['Venta', 'Alquiler'],
+      required: true,
+    },
+    fechaExpedicion: {
+      type: Date,
+      default: Date.now,
+    },
     productos: [
       {
         producto: {
@@ -53,4 +62,3 @@ const cotizacionSchema = mongoose.Schema(
 );
 
 module.exports = mongoose.model('Cotizacion', cotizacionSchema);
-

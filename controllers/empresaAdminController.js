@@ -69,6 +69,36 @@ const getEmpresaUsuarios = async (req, res) => {
   }
 };
 
+const getUsuariosGlobal = async (req, res) => {
+  try {
+    const rol = req.query?.rol ? String(req.query.rol).trim() : '';
+    const q = req.query?.q ? String(req.query.q).trim() : '';
+
+    const filter = {};
+    if (rol) {
+      filter.rol = rol;
+    }
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { nombreUsuario: rx },
+        { email: rx },
+        { telefono: rx },
+      ];
+    }
+
+    const usuarios = await Usuario.find(filter)
+      .select('-password')
+      .populate('empresa', 'nombre email plan estado estadoAprobacion');
+    res.json(usuarios);
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+    });
+  }
+};
+
 const actualizarEstadoEmpresa = async (req, res, nuevoEstado) => {
   try {
     const empresa = await Empresa.findById(req.params.id);
@@ -153,6 +183,7 @@ const desbloquearEmpresa = async (req, res) => {
 module.exports = {
   getEmpresas,
   getEmpresaUsuarios,
+  getUsuariosGlobal,
   aprobarEmpresa,
   rechazarEmpresa,
   bloquearEmpresa,

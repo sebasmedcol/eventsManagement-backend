@@ -13,14 +13,13 @@ router.use(protect);
 
 router
   .route('/')
-  .get(authorizeRoles('admin'), getUsuarios)
-  .post(authorizeRoles('admin'), createUsuario);
+  .get(authorizeRoles('admin', 'superadmin'), getUsuarios)
+  .post(authorizeRoles('admin', 'superadmin'), createUsuario);
 
 router
   .route('/:id')
-  .get(authorizeRoles('admin'), getUsuarioById)
-  .put(authorizeRoles('admin'), updateUsuario)
-  .delete(authorizeRoles('admin'), deleteUsuario);
+  .get(authorizeRoles('admin', 'superadmin'), getUsuarioById)
+  .put(authorizeRoles('admin', 'superadmin'), updateUsuario)
+  .delete(authorizeRoles('admin', 'superadmin'), deleteUsuario);
 
 module.exports = router;
-

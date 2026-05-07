@@ -126,6 +126,11 @@ const createUsuario = async (req, res) => {
     const rolFinal = normalizarTexto(rol) || 'operador';
     const permisosFinal = normalizarPermisos(permisos);
 
+    if (rolFinal === 'superadmin' && req.user?.rol !== 'superadmin') {
+      res.status(403);
+      throw new Error('Solo el superadmin puede crear usuarios con rol superadmin');
+    }
+
     if (!nombreUsuarioTrim || !password) {
       res.status(400);
       throw new Error('Por favor ingrese nombre de usuario y contraseña');
@@ -231,6 +236,12 @@ const updateUsuario = async (req, res) => {
     }
 
     if (req.body.rol !== undefined) {
+      if (req.body.rol === 'superadmin' && req.user?.rol !== 'superadmin') {
+        res.status(403);
+        throw new Error(
+          'Solo el superadmin puede asignar el rol superadmin a otros usuarios'
+        );
+      }
       usuario.rol = req.body.rol;
       if (!usuario.icono) {
         usuario.icono = getIconoPorRol(req.body.rol);

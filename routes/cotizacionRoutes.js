@@ -26,6 +26,7 @@ router
 router.post(
   '/:id/convertir-a-venta',
   authorizePerm('cotizaciones', 'editar'),
+  authorizePerm('ventas', 'crear'),
   convertirCotizacionAVenta
 );
 

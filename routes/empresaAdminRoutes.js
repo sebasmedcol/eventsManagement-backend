@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getEmpresas,
   getEmpresaUsuarios,
+  getUsuariosGlobal,
   aprobarEmpresa,
   rechazarEmpresa,
   bloquearEmpresa,
@@ -15,6 +16,7 @@ router.use(protect);
 router.use(authorizeRoles('superadmin'));
 
 router.get('/', getEmpresas);
+router.get('/usuarios', getUsuariosGlobal);
 router.get('/:id/usuarios', getEmpresaUsuarios);
 router.patch('/:id/aprobar', aprobarEmpresa);
 router.patch('/:id/rechazar', rechazarEmpresa);
