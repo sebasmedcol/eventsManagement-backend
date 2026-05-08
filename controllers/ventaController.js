@@ -2,6 +2,7 @@ const Venta = require('../models/ventaModel');
 const Consecutivo = require('../models/consecutivoModel');
 const FacturaHasConsecutivo = require('../models/facturaHasConsecutivoModel');
 const { validarDisponibilidad } = require('../services/inventarioService');
+const Producto = require('../models/productoModel');
 
 const toNumber = (value, fallback = 0) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -293,6 +294,20 @@ const createVenta = async (req, res) => {
       empresa: req.user.empresaId,
     });
 
+    // Descontar stock para ventas tipo 'Venta'
+  if (tipoDeServicio === 'Venta') {
+  for (const item of productos) {
+    const productoId = item.producto;
+    const cantidad = toNumber(item.cantidad, 0);
+    if (!productoId || cantidad <= 0) continue;
+
+    await Producto.findOneAndUpdate(
+      { _id: productoId, empresa: req.user.empresaId },
+      { $inc: { cantidadTotal: -cantidad } }
+    );
+  }
+}
+
     // Poblar la venta con los datos relacionados
     const ventaCompleta = await Venta.findOne({
       _id: venta._id,
@@ -441,6 +456,33 @@ const updateVenta = async (req, res) => {
       estado: estadoFinal,
     };
 
+    // Reconciliar stock si el tipo de servicio es 'Venta'
+if (tipoDeServicio === 'Venta') {
+  // 1. Revertir stock de los productos anteriores
+  for (const item of venta.productos) {
+    const productoId = item.producto;
+    const cantidad = toNumber(item.cantidad, 0);
+    if (!productoId || cantidad <= 0) continue;
+
+    await Producto.findOneAndUpdate(
+      { _id: productoId, empresa: req.user.empresaId },
+      { $inc: { cantidadTotal: cantidad } }
+    );
+  }
+
+  // 2. Descontar stock con los productos nuevos
+  for (const item of productos) {
+    const productoId = item.producto;
+    const cantidad = toNumber(item.cantidad, 0);
+    if (!productoId || cantidad <= 0) continue;
+
+    await Producto.findOneAndUpdate(
+      { _id: productoId, empresa: req.user.empresaId },
+      { $inc: { cantidadTotal: -cantidad } }
+    );
+  }
+}
+
     const ventaActualizada = await Venta.findOneAndUpdate(
       { _id: req.params.id, empresa: req.user.empresaId },
       payload,
@@ -482,10 +524,62 @@ const deleteVenta = async (req, res) => {
       throw new Error('Venta no encontrada');
     }
 
+    if (venta.estado !== 'cancelada') {
+      res.status(400);
+      throw new Error('Solo se pueden eliminar ventas que estén canceladas');
+    }
+
+    await Venta.deleteOne({ _id: venta._id });
+
+    res.json({ message: 'Venta eliminada permanentemente' });
+  } catch (error) {
+    res.status(res.statusCode || 500).json({
+      message: error.message,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+    });
+  }
+};
+
+/**
+ * @desc    Anular una venta (pasa a cancelada y devuelve stock)
+ * @route   PUT /api/ventas/:id/anular
+ * @access  Privado
+ */
+const anularVenta = async (req, res) => {
+  try {
+    const venta = await Venta.findOne({
+      _id: req.params.id,
+      empresa: req.user.empresaId,
+    });
+
+    if (!venta) {
+      res.status(404);
+      throw new Error('Venta no encontrada');
+    }
+
+    if (venta.estado === 'cancelada') {
+      res.status(400);
+      throw new Error('La venta ya está cancelada');
+    }
+
+    // Restaurar stock si la venta es de tipo 'Venta'
+    if (venta.tipoDeServicio === 'Venta') {
+      for (const item of venta.productos) {
+        const productoId = item.producto;
+        const cantidad = toNumber(item.cantidad, 0);
+        if (!productoId || cantidad <= 0) continue;
+
+        await Producto.findOneAndUpdate(
+          { _id: productoId, empresa: req.user.empresaId },
+          { $inc: { cantidadTotal: cantidad } }
+        );
+      }
+    }
+
     venta.estado = 'cancelada';
     await venta.save();
 
-    res.json({ message: 'Venta eliminada' });
+    res.json({ message: 'Venta anulada correctamente' });
   } catch (error) {
     res.status(res.statusCode || 500).json({
       message: error.message,
@@ -500,4 +594,5 @@ module.exports = {
   createVenta,
   updateVenta,
   deleteVenta,
+  anularVenta,
 };

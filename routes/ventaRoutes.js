@@ -6,13 +6,16 @@ const {
   createVenta,
   updateVenta,
   deleteVenta,
+  anularVenta,
 } = require('../controllers/ventaController');
 const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 
-// Rutas protegidas
 router.route('/')
   .get(protect, authorizePerm('ventas', 'ver'), getVentas)
   .post(protect, authorizePerm('ventas', 'crear'), createVenta);
+
+router.route('/:id/anular')
+  .put(protect, authorizePerm('ventas', 'editar'), anularVenta);
 
 router.route('/:id')
   .get(protect, authorizePerm('ventas', 'ver'), getVentaById)
