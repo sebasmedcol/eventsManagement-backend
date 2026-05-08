@@ -10,6 +10,7 @@ const toNumber = (value, fallback = 0) => {
   return Number.isNaN(n) ? fallback : n;
 };
 
+
 const parseDateOrNull = (value) => {
   if (!value) return null;
   const d = new Date(value);
@@ -26,6 +27,12 @@ const formatDuration = (minutes) => {
   if (h > 0 && m > 0) return `${h}h ${m}m`;
   if (h > 0) return `${h}h`;
   return `${m}m`;
+};
+
+const calcularEstadoPago = ({ saldoPendiente, abono, estadoPagoManual, fechaLimitePago }) => {
+  if (saldoPendiente <= 0) return { estadoPago: 'pagada', fechaLimitePago: null };
+  if (abono > 0) return { estadoPago: 'pago_parcial', fechaLimitePago: fechaLimitePago || null };
+  return { estadoPago: estadoPagoManual || 'pendiente', fechaLimitePago: fechaLimitePago || null };
 };
 
 const calcularIvaTotales = ({ subtotal, descuento, ivaPorcentaje, abono }) => {
@@ -267,6 +274,15 @@ const createVenta = async (req, res) => {
       abono,
     });
 
+    const estadoPagoCalc = calcularEstadoPago({
+  saldoPendiente: totales.saldoPendiente,
+  abono: totales.abono,
+  estadoPagoManual: req.body.estadoPago || 'pendiente',
+  fechaLimitePago: req.body.fechaLimitePago
+    ? new Date(req.body.fechaLimitePago)
+    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+});
+
     const venta = await Venta.create({
       facturaHasConsecutivo,
       numeroConsecutivo: consecutivoActualizado?.contador ?? undefined,
@@ -292,6 +308,8 @@ const createVenta = async (req, res) => {
       totalPagar: totales.totalPagar,
       saldoPendiente: totales.saldoPendiente,
       empresa: req.user.empresaId,
+      estadoPago: estadoPagoCalc.estadoPago,
+      fechaLimitePago: estadoPagoCalc.fechaLimitePago,
     });
 
     // Descontar stock para ventas tipo 'Venta'
@@ -434,6 +452,15 @@ const updateVenta = async (req, res) => {
     if (estadoFinal === true || estadoFinal === 'true') estadoFinal = 'activa';
     if (estadoFinal === false || estadoFinal === 'false') estadoFinal = 'cancelada';
 
+    const estadoPagoCalc = calcularEstadoPago({
+  saldoPendiente: totales.saldoPendiente,
+  abono: totales.abono,
+  estadoPagoManual: body.estadoPago || venta.estadoPago || 'pendiente',
+  fechaLimitePago: body.fechaLimitePago
+    ? new Date(body.fechaLimitePago)
+    : venta.fechaLimitePago || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+});
+
     const payload = {
       ...body,
       tipoDeServicio,
@@ -454,6 +481,8 @@ const updateVenta = async (req, res) => {
       totalPagar: totales.totalPagar,
       saldoPendiente: totales.saldoPendiente,
       estado: estadoFinal,
+      estadoPago: estadoPagoCalc.estadoPago,
+      fechaLimitePago: estadoPagoCalc.fechaLimitePago,
     };
 
     // Reconciliar stock si el tipo de servicio es 'Venta'
@@ -588,6 +617,31 @@ const anularVenta = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Marcar como vencidas las ventas con fecha límite superada
+ * @route   PUT /api/ventas/actualizar-vencidas
+ * @access  Privado
+ */
+const actualizarVencidas = async (req, res) => {
+  try {
+    const ahora = new Date();
+    const resultado = await Venta.updateMany(
+      {
+        empresa: req.user.empresaId,
+        estadoPago: { $in: ['pendiente', 'pago_parcial'] },
+        fechaLimitePago: { $lt: ahora, $ne: null },
+      },
+      { $set: { estadoPago: 'vencida' } }
+    );
+    res.json({ actualizadas: resultado.modifiedCount });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+    });
+  }
+};
+
 module.exports = {
   getVentas,
   getVentaById,
@@ -595,4 +649,5 @@ module.exports = {
   updateVenta,
   deleteVenta,
   anularVenta,
+  actualizarVencidas,
 };

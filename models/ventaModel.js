@@ -124,6 +124,15 @@ const ventaSchema = mongoose.Schema(
       default: 0,
       min: 0,
     },
+    estadoPago: {
+  type: String,
+  enum: ['pendiente', 'pago_parcial', 'pagada', 'vencida'],
+  default: 'pendiente',
+},
+fechaLimitePago: {
+  type: Date,
+  default: null,
+},
     estado: {
       type: String,
       enum: ['activa', 'cancelada'],
