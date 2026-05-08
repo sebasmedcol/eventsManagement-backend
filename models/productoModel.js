@@ -12,6 +12,11 @@ const productoSchema = mongoose.Schema(
       required: [true, 'Por favor ingrese la descripción del producto'],
       trim: true,
     },
+    codigoSKU: {
+    type: String,
+    trim: true,
+    default: '',
+    },
     tipoDeServicio: {
       type: String,
       default: 'Venta',

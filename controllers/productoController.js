@@ -58,7 +58,7 @@ const getProductoById = async (req, res) => {
  */
 const createProducto = async (req, res) => {
   try {
-    const { nombre, descripcion, tipoDeServicio, tipoDeCobro, precio, cantidadTotal } =
+    const { nombre, descripcion, tipoDeServicio, tipoDeCobro, precio, cantidadTotal, codigoSKU} =
       req.body;
 
     const nombreTrim = normalizarTexto(nombre);
@@ -105,6 +105,7 @@ const createProducto = async (req, res) => {
       precio: precioNumero,
       cantidadTotal: cantidadNumero,
       empresa: req.user.empresaId,
+      codigoSKU: normalizarTexto(codigoSKU),
     });
 
     res.status(201).json(producto);
@@ -133,7 +134,7 @@ const updateProducto = async (req, res) => {
       throw new Error('Producto no encontrado');
     }
 
-    const { nombre, descripcion, tipoDeServicio, tipoDeCobro, precio, cantidadTotal, estado } =
+    const { nombre, descripcion, tipoDeServicio, tipoDeCobro, precio, cantidadTotal, estado, codigoSKU} =
       req.body;
 
     if (nombre !== undefined) {
@@ -192,6 +193,10 @@ const updateProducto = async (req, res) => {
 
     if (estado !== undefined) {
       producto.estado = estado === true || estado === 'true';
+    }
+    
+    if (codigoSKU !== undefined) {
+    producto.codigoSKU = normalizarTexto(codigoSKU);
     }
 
     const productoActualizado = await producto.save();
