@@ -100,4 +100,26 @@ const authorizePerm = (modulo, accion) => {
   };
 };
 
-module.exports = { protect, authorizeRoles, authorizePerm };
+const requirePlan = (allowedPlans) => {
+  const plans = Array.isArray(allowedPlans) ? allowedPlans : [allowedPlans];
+  return async (req, res, next) => {
+    try {
+      if (!req.user?.empresaId) {
+        res.status(403);
+        throw new Error('Empresa no encontrada o no asignada');
+      }
+      const Empresa = require('../models/empresaModel');
+      const empresa = await Empresa.findById(req.user.empresaId).select('plan');
+      const plan = empresa?.plan || 'default';
+      if (!plans.includes(plan)) {
+        res.status(403);
+        throw new Error('Tu plan no incluye acceso a este módulo');
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+
+module.exports = { protect, authorizeRoles, authorizePerm, requirePlan };
