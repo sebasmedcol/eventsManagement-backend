@@ -21,6 +21,7 @@ const usuarioRoutes = require('./routes/usuarioRoutes');
 const cotizacionRoutes = require('./routes/cotizacionRoutes');
 const empresaAdminRoutes = require('./routes/empresaAdminRoutes');
 const rolRoutes = require('./routes/rolRoutes');
+const configRoutes = require('./routes/configRoutes');
 
 // Cargar variables de entorno
 dotenv.config();
@@ -47,8 +48,8 @@ app.use(cors({
   }
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false, limit: '2mb' }));
 
 // Ruta de prueba para verificar que la API esté viva
 app.get('/health', (_, res) => {
@@ -69,6 +70,7 @@ app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/cotizaciones', cotizacionRoutes);
 app.use('/api/empresas-admin', empresaAdminRoutes);
 app.use('/api/roles', rolRoutes);
+app.use('/api/config', configRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);

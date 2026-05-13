@@ -156,6 +156,9 @@ const updateFicha = async (req, res) => {
         res.status(400);
         throw new Error('El responsable no pertenece a la empresa');
       }
+      if (String(ficha.responsable) !== String(body.responsable)) {
+        ficha.notificacionLeidaPor = [];
+      }
       ficha.responsable = body.responsable;
     }
 

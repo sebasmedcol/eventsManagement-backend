@@ -35,6 +35,25 @@ const empresaSchema = mongoose.Schema(
       maxlength: 254,
       unique: true,
     },
+    logo: {
+      format: {
+        type: String,
+        enum: ['svg', 'webp'],
+        default: null,
+      },
+      dataBase64: {
+        type: String,
+        default: null,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+    mostrarLogoEnComprobante: {
+      type: Boolean,
+      default: true,
+    },
     plan: {
       type: String,
       default: 'default',

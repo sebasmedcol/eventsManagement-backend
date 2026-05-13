@@ -61,6 +61,11 @@ const eventoFichaSchema = mongoose.Schema(
       ref: 'Usuario',
       required: true,
     },
+    notificacionLeidaPor: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Usuario',
+      default: [],
+    },
     tipoDeServicio: {
       type: String,
       required: true,

@@ -62,6 +62,9 @@ const register = async (req, res) => {
       plan,
       nombreUsuario,
       password,
+      adminTelefono,
+      adminEmail,
+      adminConfirmEmail,
     } = req.body;
 
     const nombreTrim = normalizarTexto(nombre);
@@ -71,6 +74,9 @@ const register = async (req, res) => {
     const emailTrim = normalizarTexto(email).toLowerCase();
     const planTrim = normalizarTexto(plan).toLowerCase();
     const nombreUsuarioTrim = normalizarTexto(nombreUsuario);
+    const adminTelefonoTrim = normalizarTexto(adminTelefono);
+    const adminEmailTrim = normalizarTexto(adminEmail).toLowerCase();
+    const adminConfirmEmailTrim = normalizarTexto(adminConfirmEmail).toLowerCase();
 
     if (
       !nombreTrim ||
@@ -78,7 +84,9 @@ const register = async (req, res) => {
       !telefonoTrim ||
       !emailTrim ||
       !nombreUsuarioTrim ||
-      !password
+      !password ||
+      !adminTelefonoTrim ||
+      !adminEmailTrim
     ) {
       res.status(400);
       throw new Error('Por favor ingrese todos los campos obligatorios');
@@ -104,6 +112,14 @@ const register = async (req, res) => {
       res.status(400);
       throw new Error('El correo no puede superar 254 caracteres');
     }
+    if (adminTelefonoTrim.length > 15) {
+      res.status(400);
+      throw new Error('El teléfono del usuario no puede superar 15 caracteres');
+    }
+    if (adminEmailTrim.length > 254 || adminConfirmEmailTrim.length > 254) {
+      res.status(400);
+      throw new Error('El correo del usuario no puede superar 254 caracteres');
+    }
     if (nombreUsuarioTrim.length > 50) {
       res.status(400);
       throw new Error('El nombre de usuario no puede superar 50 caracteres');
@@ -113,6 +129,14 @@ const register = async (req, res) => {
     if (!emailRegex.test(emailTrim)) {
       res.status(400);
       throw new Error('Correo electrónico inválido');
+    }
+    if (!emailRegex.test(adminEmailTrim)) {
+      res.status(400);
+      throw new Error('Correo electrónico del usuario inválido');
+    }
+    if (adminEmailTrim !== adminConfirmEmailTrim) {
+      res.status(400);
+      throw new Error('El correo y la confirmación de correo del usuario deben coincidir');
     }
 
     const passwordError = validarPassword(password);
@@ -176,6 +200,8 @@ const register = async (req, res) => {
 
     const usuario = await Usuario.create({
       nombreUsuario: nombreUsuarioTrim,
+      email: adminEmailTrim,
+      telefono: adminTelefonoTrim,
       password: hashedPassword,
       rol: 'admin',
       icono: 'userTie',

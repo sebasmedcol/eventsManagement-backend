@@ -164,6 +164,7 @@ module.exports = {
       const fichas = await EventoFicha.find({
         empresa: req.user.empresaId,
         responsable: req.user._id,
+        notificacionLeidaPor: { $ne: req.user._id },
       })
         .populate({
           path: 'evento',
@@ -191,6 +192,33 @@ module.exports = {
       res.json(data);
     } catch (error) {
       res.status(500).json({
+        message: error.message,
+        stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+      });
+    }
+  },
+  marcarNotificacionEventoPremiumLeida: async (req, res) => {
+    try {
+      const fichaId = req.params.fichaId;
+      const ficha = await EventoFicha.findOne({
+        _id: fichaId,
+        empresa: req.user.empresaId,
+        responsable: req.user._id,
+      }).select('_id notificacionLeidaPor');
+
+      if (!ficha) {
+        res.status(404);
+        throw new Error('Notificación no encontrada');
+      }
+
+      await EventoFicha.updateOne(
+        { _id: fichaId, empresa: req.user.empresaId },
+        { $addToSet: { notificacionLeidaPor: req.user._id } }
+      );
+
+      res.json({ message: 'Notificación marcada como leída' });
+    } catch (error) {
+      res.status(res.statusCode || 500).json({
         message: error.message,
         stack: process.env.NODE_ENV === 'production' ? null : error.stack,
       });

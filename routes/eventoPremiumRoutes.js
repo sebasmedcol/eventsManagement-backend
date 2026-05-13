@@ -9,6 +9,7 @@ const {
   deleteEventoPremium,
   getUsuariosEmpresaPremiumEventos,
   getNotificacionesEventosPremium,
+  marcarNotificacionEventoPremiumLeida,
 } = require('../controllers/eventoPremiumController');
 
 const {
@@ -30,6 +31,7 @@ router.use(authorizePerm('eventos', 'ver'));
 router.use(requirePlan(['premium', 'super']));
 
 router.get('/notificaciones', getNotificacionesEventosPremium);
+router.put('/notificaciones/:fichaId/leida', marcarNotificacionEventoPremiumLeida);
 router.get('/usuarios', getUsuariosEmpresaPremiumEventos);
 
 router
