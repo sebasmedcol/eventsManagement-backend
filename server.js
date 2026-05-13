@@ -20,6 +20,7 @@ const eventoPremiumRoutes = require('./routes/eventoPremiumRoutes');
 const usuarioRoutes = require('./routes/usuarioRoutes');
 const cotizacionRoutes = require('./routes/cotizacionRoutes');
 const empresaAdminRoutes = require('./routes/empresaAdminRoutes');
+const rolRoutes = require('./routes/rolRoutes');
 
 // Cargar variables de entorno
 dotenv.config();
@@ -67,6 +68,7 @@ app.use('/api/factura-consecutivo', facturaHasConsecutivoRoutes);
 app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/cotizaciones', cotizacionRoutes);
 app.use('/api/empresas-admin', empresaAdminRoutes);
+app.use('/api/roles', rolRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);

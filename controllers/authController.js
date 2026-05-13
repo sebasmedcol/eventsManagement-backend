@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const Usuario = require('../models/usuarioModel');
 const Empresa = require('../models/empresaModel');
+const { inicializarRolesEmpresa } = require('./rolController');
 
 const normalizarTexto = (value) => {
   if (value == null) return '';
@@ -165,6 +166,14 @@ const register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Crear roles predeterminados para la empresa
+    let rolesCreados = null;
+    try {
+      rolesCreados = await inicializarRolesEmpresa(empresa._id);
+    } catch (rolError) {
+      console.error('Error al crear roles predeterminados:', rolError);
+    }
+
     const usuario = await Usuario.create({
       nombreUsuario: nombreUsuarioTrim,
       password: hashedPassword,
@@ -173,6 +182,8 @@ const register = async (req, res) => {
       esAdminPrincipal: true,
       estado: true,
       empresa: empresa._id,
+      // Asignar el rol de Administrador al admin principal si fue creado
+      rol_id: rolesCreados?.admin?._id || null,
     });
 
     const token = generateToken(usuario);
@@ -281,7 +292,8 @@ const getMe = async (req, res) => {
   try {
     const usuario = await Usuario.findById(req.user._id)
       .select('-password')
-      .populate('empresa', 'nombre email plan estado estadoAprobacion');
+      .populate('empresa', 'nombre email plan estado estadoAprobacion')
+      .populate('rol_id', 'nombre descripcion permisos activo');
     res.json(usuario);
   } catch (error) {
     res.status(500).json({

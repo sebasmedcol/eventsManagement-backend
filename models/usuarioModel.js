@@ -61,6 +61,11 @@ const usuarioSchema = mongoose.Schema(
       of: permisoCrudSchema,
       default: {},
     },
+    rol_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Rol',
+      default: null,
+    },
     estado: {
       type: Boolean,
       default: true,

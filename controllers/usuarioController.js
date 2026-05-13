@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const Usuario = require('../models/usuarioModel');
+const Rol = require('../models/rolModel');
 
 const normalizarTexto = (value) => {
   if (value == null) return '';
@@ -67,7 +68,9 @@ const getIconoPorRol = (rol) => {
 
 const getUsuarios = async (req, res) => {
   try {
-    const usuarios = await Usuario.find({ empresa: req.user.empresaId }).select('-password');
+    const usuarios = await Usuario.find({ empresa: req.user.empresaId })
+      .select('-password')
+      .populate('rol_id', 'nombre descripcion permisos activo');
     res.json(usuarios);
   } catch (error) {
     res.status(500).json({
@@ -82,7 +85,9 @@ const getUsuarioById = async (req, res) => {
     const usuario = await Usuario.findOne({
       _id: req.params.id,
       empresa: req.user.empresaId,
-    }).select('-password');
+    })
+      .select('-password')
+      .populate('rol_id', 'nombre descripcion permisos activo');
 
     if (!usuario) {
       res.status(404);
@@ -118,7 +123,7 @@ const getUsuarioById = async (req, res) => {
 
 const createUsuario = async (req, res) => {
   try {
-    const { nombreUsuario, password, rol, estado, email, indicativo, telefono, icono, permisos } = req.body;
+    const { nombreUsuario, password, rol, estado, email, indicativo, telefono, icono, permisos, rol_id } = req.body;
     const nombreUsuarioTrim = normalizarTexto(nombreUsuario);
     const emailTrim = normalizarTexto(email).toLowerCase();
     const indicativoTrim = normalizarTexto(indicativo) || '+57';
@@ -164,6 +169,21 @@ const createUsuario = async (req, res) => {
       throw new Error('El nombre de usuario ya está en uso');
     }
 
+    // Validar rol_id si se proporciona
+    let rolIdFinal = null;
+    if (rol_id) {
+      const rolExiste = await Rol.findOne({
+        _id: rol_id,
+        empresa: req.user.empresaId,
+        activo: true,
+      });
+      if (!rolExiste) {
+        res.status(400);
+        throw new Error('El rol seleccionado no existe o no está activo');
+      }
+      rolIdFinal = rol_id;
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -177,8 +197,12 @@ const createUsuario = async (req, res) => {
       icono: normalizarTexto(icono) || getIconoPorRol(rolFinal),
       estado: estado !== undefined ? estado : true,
       permisos: permisosFinal,
+      rol_id: rolIdFinal,
       empresa: req.user.empresaId,
     });
+
+    // Populate rol_id antes de responder
+    await usuario.populate('rol_id', 'nombre descripcion permisos activo');
 
     const respuesta = usuario.toObject();
     delete respuesta.password;
@@ -282,7 +306,28 @@ const updateUsuario = async (req, res) => {
       usuario.permisos = normalizarPermisos(req.body.permisos);
     }
 
+    // Manejar rol_id (puede ser null para quitar el rol asignado)
+    if (req.body.rol_id !== undefined) {
+      if (req.body.rol_id === null || req.body.rol_id === '') {
+        usuario.rol_id = null;
+      } else {
+        const rolExiste = await Rol.findOne({
+          _id: req.body.rol_id,
+          empresa: req.user.empresaId,
+          activo: true,
+        });
+        if (!rolExiste) {
+          res.status(400);
+          throw new Error('El rol seleccionado no existe o no está activo');
+        }
+        usuario.rol_id = req.body.rol_id;
+      }
+    }
+
     await usuario.save();
+
+    // Populate rol_id antes de responder
+    await usuario.populate('rol_id', 'nombre descripcion permisos activo');
 
     const respuesta = usuario.toObject();
     delete respuesta.password;
