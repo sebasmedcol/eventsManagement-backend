@@ -11,6 +11,7 @@ const escapeRegex = (str) => {
 };
 
 const MODULOS_PERMISOS = [
+  'dashboard',
   'clientes',
   'productos',
   'ventas',
@@ -18,8 +19,11 @@ const MODULOS_PERMISOS = [
   'consecutivos',
   'cotizaciones',
   'disponibilidad',
+  'configuracion',
   'usuarios',
   'roles',
+  'dashboard_global',
+  'empresas',
 ];
 
 const normalizarPermisos = (input) => {
@@ -49,9 +53,17 @@ const buildPermisosAdmin = () => {
 const buildPermisosOperador = () => {
   const permisos = {};
   // Operador puede ver, crear y editar, pero no eliminar en los módulos principales
-  const modulosOperador = ['clientes', 'productos', 'ventas', 'eventos', 'consecutivos', 'cotizaciones', 'disponibilidad'];
+  const modulosOperador = ['clientes', 'productos', 'ventas', 'eventos', 'consecutivos', 'cotizaciones', 'disponibilidad', 'dashboard', 'configuracion'];
   modulosOperador.forEach((modulo) => {
-    permisos[modulo] = { crear: true, ver: true, editar: true, eliminar: false };
+    if (modulo === 'disponibilidad' || modulo === 'dashboard') {
+      // Solo ver para estos módulos
+      permisos[modulo] = { crear: false, ver: true, editar: false, eliminar: false };
+    } else if (modulo === 'configuracion') {
+      // Ver y editar para configuración
+      permisos[modulo] = { crear: false, ver: true, editar: true, eliminar: false };
+    } else {
+      permisos[modulo] = { crear: true, ver: true, editar: true, eliminar: false };
+    }
   });
   return permisos;
 };
