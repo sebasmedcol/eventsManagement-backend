@@ -8,15 +8,16 @@ const {
   deleteConsecutivo,
 } = require('../controllers/consecutivoController');
 const { protect, authorizePerm } = require('../middlewares/authMiddleware');
+const { checkModuleAccess } = require('../middlewares/planMiddleware');
 
-// Rutas protegidas
+// Rutas protegidas con verificación de plan (consecutivos usa módulo 'facturacion')
 router.route('/')
-  .get(protect, authorizePerm('consecutivos', 'ver'), getConsecutivos)
-  .post(protect, authorizePerm('consecutivos', 'crear'), createConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), checkModuleAccess('facturacion'), getConsecutivos)
+  .post(protect, authorizePerm('consecutivos', 'crear'), checkModuleAccess('facturacion'), createConsecutivo);
 
 router.route('/:id')
-  .get(protect, authorizePerm('consecutivos', 'ver'), getConsecutivoById)
-  .put(protect, authorizePerm('consecutivos', 'editar'), updateConsecutivo)
-  .delete(protect, authorizePerm('consecutivos', 'eliminar'), deleteConsecutivo);
+  .get(protect, authorizePerm('consecutivos', 'ver'), checkModuleAccess('facturacion'), getConsecutivoById)
+  .put(protect, authorizePerm('consecutivos', 'editar'), checkModuleAccess('facturacion'), updateConsecutivo)
+  .delete(protect, authorizePerm('consecutivos', 'eliminar'), checkModuleAccess('facturacion'), deleteConsecutivo);
 
 module.exports = router;

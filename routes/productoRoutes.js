@@ -8,15 +8,16 @@ const {
   deleteProducto,
 } = require('../controllers/productoController');
 const { protect, authorizePerm } = require('../middlewares/authMiddleware');
+const { checkLimitMiddleware, checkModuleAccess } = require('../middlewares/planMiddleware');
 
-// Rutas protegidas
+// Rutas protegidas con verificación de plan
 router.route('/')
-  .get(protect, authorizePerm('productos', 'ver'), getProductos)
-  .post(protect, authorizePerm('productos', 'crear'), createProducto);
+  .get(protect, authorizePerm('productos', 'ver'), checkModuleAccess('productos'), getProductos)
+  .post(protect, authorizePerm('productos', 'crear'), checkModuleAccess('productos'), checkLimitMiddleware('producto'), createProducto);
 
 router.route('/:id')
-  .get(protect, authorizePerm('productos', 'ver'), getProductoById)
-  .put(protect, authorizePerm('productos', 'editar'), updateProducto)
-  .delete(protect, authorizePerm('productos', 'eliminar'), deleteProducto);
+  .get(protect, authorizePerm('productos', 'ver'), checkModuleAccess('productos'), getProductoById)
+  .put(protect, authorizePerm('productos', 'editar'), checkModuleAccess('productos'), updateProducto)
+  .delete(protect, authorizePerm('productos', 'eliminar'), checkModuleAccess('productos'), deleteProducto);
 
 module.exports = router;

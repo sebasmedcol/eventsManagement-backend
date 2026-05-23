@@ -25,10 +25,12 @@ const {
 } = require('../controllers/eventoFichaController');
 
 const { protect, authorizePerm, requirePlan } = require('../middlewares/authMiddleware');
+const { checkLimitMiddleware, checkModuleAccess } = require('../middlewares/planMiddleware');
 
 router.use(protect);
 router.use(authorizePerm('eventos', 'ver'));
-router.use(requirePlan(['premium', 'super']));
+// Eventos Premium requieren plan pro o premium
+router.use(requirePlan(['pro', 'premium', 'super']));
 
 router.get('/notificaciones', getNotificacionesEventosPremium);
 router.put('/notificaciones/:fichaId/leida', marcarNotificacionEventoPremiumLeida);
@@ -37,7 +39,7 @@ router.get('/usuarios', getUsuariosEmpresaPremiumEventos);
 router
   .route('/')
   .get(getEventosPremium)
-  .post(authorizePerm('eventos', 'crear'), createEventoPremium);
+  .post(authorizePerm('eventos', 'crear'), checkLimitMiddleware('evento'), createEventoPremium);
 
 router
   .route('/:id')
@@ -68,6 +70,6 @@ router
 
 router
   .route('/fichas/:fichaId/link-venta')
-  .put(authorizePerm('ventas', 'crear'), authorizePerm('eventos', 'editar'), linkVentaToFicha);
+  .put(authorizePerm('ventas', 'crear'), authorizePerm('eventos', 'editar'), checkLimitMiddleware('venta'), linkVentaToFicha);
 
 module.exports = router;

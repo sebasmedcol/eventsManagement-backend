@@ -54,11 +54,12 @@ const empresaSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Plan de suscripcion actualizado con los nuevos valores
     plan: {
       type: String,
-      default: 'default',
+      default: 'free_trial',
       trim: true,
-      enum: ['default', 'free', 'basic', 'pro', 'premium', 'super'],
+      enum: ['default', 'free', 'free_trial', 'basic', 'basico', 'pro', 'premium', 'super'],
     },
     estado: {
       type: Boolean,
@@ -77,6 +78,7 @@ const empresaSchema = mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Fecha de creacion para calcular trial
     fechaCreacion: {
       type: Date,
       default: Date.now,

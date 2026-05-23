@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
@@ -22,6 +23,7 @@ const cotizacionRoutes = require('./routes/cotizacionRoutes');
 const empresaAdminRoutes = require('./routes/empresaAdminRoutes');
 const rolRoutes = require('./routes/rolRoutes');
 const configRoutes = require('./routes/configRoutes');
+const planRoutes = require('./routes/planRoutes');
 
 // Cargar variables de entorno
 dotenv.config();
@@ -71,6 +73,7 @@ app.use('/api/cotizaciones', cotizacionRoutes);
 app.use('/api/empresas-admin', empresaAdminRoutes);
 app.use('/api/roles', rolRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/config', planRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);
