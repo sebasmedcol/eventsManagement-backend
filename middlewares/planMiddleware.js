@@ -1,5 +1,9 @@
 /**
- * Middleware para verificar límites y acceso según el plan de suscripción
+ * Middleware para verificar límites y acceso según el plan de suscripción.
+ *
+ * AJUSTE ESPECIAL — Empresa "SuperAdmin":
+ * Si la empresa del usuario se llama "SuperAdmin", todos los chequeos de
+ * límites y módulos se saltan automáticamente: acceso total e ilimitado.
  */
 
 const {
@@ -14,160 +18,133 @@ const {
   FEATURE_NAMES,
 } = require('../config/plansConfig');
 
-// Importar modelos necesarios para contar recursos
-const Cliente = require('../models/clienteModel');
-const Producto = require('../models/productoModel');
-const Venta = require('../models/ventaModel');
-const Cotizacion = require('../models/cotizacionModel');
-const Usuario = require('../models/usuarioModel');
-const Consecutivo = require('../models/consecutivoModel');
-const Factura = require('../models/facturaModel');
+const Cliente      = require('../models/clienteModel');
+const Producto     = require('../models/productoModel');
+const Venta        = require('../models/ventaModel');
+const Cotizacion   = require('../models/cotizacionModel');
+const Usuario      = require('../models/usuarioModel');
+const Consecutivo  = require('../models/consecutivoModel');
+const Factura      = require('../models/facturaModel');
 const EventoPremium = require('../models/eventoPremiumModel');
-const Empresa = require('../models/empresaModel');
+const Empresa      = require('../models/empresaModel');
 
-/**
- * Mapeo de recursos a sus modelos y campos de empresa
- */
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 const RESOURCE_MODEL_MAP = {
-  cliente: { model: Cliente, empresaField: 'empresa', estadoField: 'estado' },
-  producto: { model: Producto, empresaField: 'empresa', estadoField: 'estado' },
-  venta: { model: Venta, empresaField: 'empresa', estadoField: 'estado' },
-  cotizacion: { model: Cotizacion, empresaField: 'empresa', estadoField: null },
-  usuario: { model: Usuario, empresaField: 'empresa', estadoField: 'estado' },
-  consecutivo: { model: Consecutivo, empresaField: 'empresa', estadoField: 'estado' },
-  factura: { model: Factura, empresaField: 'empresa', estadoField: 'estado' },
-  evento: { model: EventoPremium, empresaField: 'empresa', estadoField: 'estado' },
+  cliente:     { model: Cliente,       empresaField: 'empresa', estadoField: 'estado' },
+  producto:    { model: Producto,      empresaField: 'empresa', estadoField: 'estado' },
+  venta:       { model: Venta,         empresaField: 'empresa', estadoField: 'estado' },
+  cotizacion:  { model: Cotizacion,    empresaField: 'empresa', estadoField: null },
+  usuario:     { model: Usuario,       empresaField: 'empresa', estadoField: 'estado' },
+  consecutivo: { model: Consecutivo,   empresaField: 'empresa', estadoField: 'estado' },
+  factura:     { model: Factura,       empresaField: 'empresa', estadoField: 'estado' },
+  evento:      { model: EventoPremium, empresaField: 'empresa', estadoField: 'estado' },
 };
 
-/**
- * Obtiene el conteo actual de un recurso para una empresa
- */
 async function getResourceCount(resourceType, empresaId) {
   const config = RESOURCE_MODEL_MAP[resourceType];
   if (!config) {
     console.warn(`Tipo de recurso no configurado: ${resourceType}`);
     return 0;
   }
-  
   try {
-    const query = {
-      [config.empresaField]: empresaId,
-    };
-    
-    // Solo filtrar por estado si el modelo tiene ese campo
-    if (config.estadoField) {
-      query[config.estadoField] = { $ne: false };
-    }
-    
-    const count = await config.model.countDocuments(query);
-    return count;
+    const query = { [config.empresaField]: empresaId };
+    if (config.estadoField) query[config.estadoField] = { $ne: false };
+    return await config.model.countDocuments(query);
   } catch (error) {
     console.error(`Error al contar ${resourceType}:`, error);
     return 0;
   }
 }
 
-/**
- * Obtiene el uso actual de todos los recursos para una empresa
- */
 async function getAllResourceUsage(empresaId) {
   const usage = {};
-  
   const countPromises = Object.keys(RESOURCE_MODEL_MAP).map(async (resourceType) => {
     const count = await getResourceCount(resourceType, empresaId);
     const limitKey = RESOURCE_TO_LIMIT_MAP[resourceType];
-    if (limitKey) {
-      usage[limitKey] = count;
-    }
+    if (limitKey) usage[limitKey] = count;
   });
-  
   await Promise.all(countPromises);
   return usage;
 }
 
+/** Devuelve true si la empresa es la cuenta SuperAdmin global */
+function esSuperAdmin(empresa) {
+  return empresa && empresa.nombre === 'SuperAdmin';
+}
+
+// ─── Middlewares ─────────────────────────────────────────────────────────────
+
 /**
- * Middleware para verificar el estado del plan y trial
- * Adjunta información del plan al request
+ * Adjunta información del plan al request.
+ * Para SuperAdmin, marca isSuperAdmin = true y no calcula trial.
  */
 const attachPlanInfo = async (req, res, next) => {
   try {
-    // Obtener empresa del usuario autenticado
     const empresaId = req.user?.empresaId || req.user?.empresa;
-    if (!empresaId) {
-      return next(); // Si no hay empresa, continuar sin info de plan
-    }
-    
+    if (!empresaId) return next();
+
     const empresa = await Empresa.findById(empresaId);
-    if (!empresa) {
+    if (!empresa) return next();
+
+    // ── SuperAdmin bypass ──────────────────────────────────────────────────
+    if (esSuperAdmin(empresa)) {
+      req.planInfo = {
+        planId: 'super',
+        isSuperAdmin: true,
+        empresaId,
+        trialStatus: null,
+      };
       return next();
     }
-    
+    // ──────────────────────────────────────────────────────────────────────
+
     const planId = normalizePlanId(empresa.plan);
     const planConfig = getPlanConfig(planId);
-    
-    // Calcular estado del trial si aplica
+
     let trialStatus = null;
     if (planId === 'free_trial' && empresa.fechaCreacion) {
-      trialStatus = calculateTrialStatus(
-        empresa.fechaCreacion,
-        planConfig.duracionDias || 14
-      );
-      
-      // Si el trial expiró, marcar en la empresa
-      if (trialStatus.expirado) {
-        req.trialExpired = true;
-      }
+      trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
+      if (trialStatus.expirado) req.trialExpired = true;
     }
-    
-    // Adjuntar información del plan al request
-    req.planInfo = {
-      planId,
-      planConfig,
-      empresaId,
-      trialStatus,
-    };
-    
+
+    req.planInfo = { planId, planConfig, empresaId, trialStatus };
     next();
   } catch (error) {
     console.error('Error en attachPlanInfo middleware:', error);
-    next(); // Continuar aunque falle
+    next();
   }
 };
 
 /**
- * Middleware factory para verificar límite antes de crear un recurso
- * @param {string} resourceType - Tipo de recurso (cliente, producto, etc.)
+ * Factory: verifica límite antes de crear un recurso.
+ * SuperAdmin siempre puede crear sin restricciones.
  */
 const checkLimitMiddleware = (resourceType) => {
   return async (req, res, next) => {
     try {
       const empresaId = req.user?.empresaId || req.user?.empresa;
       if (!empresaId) {
-        return res.status(401).json({
-          success: false,
-          message: 'No autorizado: empresa no identificada',
-        });
+        return res.status(401).json({ success: false, message: 'No autorizado: empresa no identificada' });
       }
-      
-      // Obtener empresa y su plan
+
       const empresa = await Empresa.findById(empresaId);
       if (!empresa) {
-        return res.status(404).json({
-          success: false,
-          message: 'Empresa no encontrada',
-        });
+        return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
       }
-      
+
+      // ── SuperAdmin bypass ────────────────────────────────────────────────
+      if (esSuperAdmin(empresa)) {
+        req.limitInfo = { resourceType, allowed: true, unlimited: true };
+        return next();
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
-      
-      // Verificar si el trial expiró
+
       if (planId === 'free_trial') {
-        const trialStatus = calculateTrialStatus(
-          empresa.fechaCreacion,
-          planConfig.duracionDias || 14
-        );
-        
+        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
         if (trialStatus.expirado) {
           return res.status(403).json({
             success: false,
@@ -177,13 +154,10 @@ const checkLimitMiddleware = (resourceType) => {
           });
         }
       }
-      
-      // Obtener conteo actual del recurso
+
       const currentCount = await getResourceCount(resourceType, empresaId);
-      
-      // Verificar límite
-      const limitCheck = checkResourceLimit(planId, resourceType, currentCount);
-      
+      const limitCheck   = checkResourceLimit(planId, resourceType, currentCount);
+
       if (!limitCheck.allowed) {
         return res.status(403).json({
           success: false,
@@ -196,57 +170,42 @@ const checkLimitMiddleware = (resourceType) => {
           planName: planConfig.nombre,
         });
       }
-      
-      // Adjuntar información de límites al request para uso posterior
-      req.limitInfo = {
-        resourceType,
-        ...limitCheck,
-      };
-      
+
+      req.limitInfo = { resourceType, ...limitCheck };
       next();
     } catch (error) {
       console.error(`Error en checkLimitMiddleware (${resourceType}):`, error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al verificar límites del plan',
-      });
+      res.status(500).json({ success: false, message: 'Error al verificar límites del plan' });
     }
   };
 };
 
 /**
- * Middleware factory para verificar acceso a un módulo
- * @param {string} moduleName - Nombre del módulo
+ * Factory: verifica acceso a un módulo.
+ * SuperAdmin siempre tiene acceso a cualquier módulo.
  */
 const checkModuleAccess = (moduleName) => {
   return async (req, res, next) => {
     try {
       const empresaId = req.user?.empresaId || req.user?.empresa;
       if (!empresaId) {
-        return res.status(401).json({
-          success: false,
-          message: 'No autorizado: empresa no identificada',
-        });
+        return res.status(401).json({ success: false, message: 'No autorizado: empresa no identificada' });
       }
-      
+
       const empresa = await Empresa.findById(empresaId);
       if (!empresa) {
-        return res.status(404).json({
-          success: false,
-          message: 'Empresa no encontrada',
-        });
+        return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
       }
-      
+
+      // ── SuperAdmin bypass ────────────────────────────────────────────────
+      if (esSuperAdmin(empresa)) return next();
+      // ────────────────────────────────────────────────────────────────────
+
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
-      
-      // Verificar si el trial expiró
+
       if (planId === 'free_trial') {
-        const trialStatus = calculateTrialStatus(
-          empresa.fechaCreacion,
-          planConfig.duracionDias || 14
-        );
-        
+        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
         if (trialStatus.expirado) {
           return res.status(403).json({
             success: false,
@@ -255,11 +214,9 @@ const checkModuleAccess = (moduleName) => {
           });
         }
       }
-      
-      // Verificar acceso al módulo
+
       if (!isModuleAvailable(planId, moduleName)) {
         const moduloNombre = MODULE_NAMES[moduleName] || moduleName;
-        
         return res.status(403).json({
           success: false,
           code: 'MODULE_NOT_AVAILABLE',
@@ -269,47 +226,41 @@ const checkModuleAccess = (moduleName) => {
           planName: planConfig.nombre,
         });
       }
-      
+
       next();
     } catch (error) {
       console.error(`Error en checkModuleAccess (${moduleName}):`, error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al verificar acceso al módulo',
-      });
+      res.status(500).json({ success: false, message: 'Error al verificar acceso al módulo' });
     }
   };
 };
 
 /**
- * Middleware factory para verificar acceso a una característica
- * @param {string} featureName - Nombre de la característica
+ * Factory: verifica acceso a una característica.
+ * SuperAdmin siempre tiene acceso.
  */
 const checkFeatureAccess = (featureName) => {
   return async (req, res, next) => {
     try {
       const empresaId = req.user?.empresaId || req.user?.empresa;
       if (!empresaId) {
-        return res.status(401).json({
-          success: false,
-          message: 'No autorizado: empresa no identificada',
-        });
+        return res.status(401).json({ success: false, message: 'No autorizado: empresa no identificada' });
       }
-      
+
       const empresa = await Empresa.findById(empresaId);
       if (!empresa) {
-        return res.status(404).json({
-          success: false,
-          message: 'Empresa no encontrada',
-        });
+        return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
       }
-      
+
+      // ── SuperAdmin bypass ────────────────────────────────────────────────
+      if (esSuperAdmin(empresa)) return next();
+      // ────────────────────────────────────────────────────────────────────
+
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
-      
+
       if (!isFeatureAvailable(planId, featureName)) {
         const featureNombre = FEATURE_NAMES[featureName] || featureName;
-        
         return res.status(403).json({
           success: false,
           code: 'FEATURE_NOT_AVAILABLE',
@@ -319,14 +270,11 @@ const checkFeatureAccess = (featureName) => {
           planName: planConfig.nombre,
         });
       }
-      
+
       next();
     } catch (error) {
       console.error(`Error en checkFeatureAccess (${featureName}):`, error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al verificar acceso a la característica',
-      });
+      res.status(500).json({ success: false, message: 'Error al verificar acceso a la característica' });
     }
   };
 };
