@@ -7,21 +7,23 @@ const {
   updateRol,
   deleteRol,
 } = require('../controllers/rolController');
-const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 const { checkModuleAccess } = require('../middlewares/planMiddleware');
 
 router.use(protect);
 
-// Rutas protegidas con verificación de plan (roles solo disponibles en plan pro o superior)
+// authorizeRoles fue reemplazado por authorizePerm para que usuarios con rol_id
+// que tengan permisos sobre el módulo 'roles' puedan acceder, sin importar
+// si su campo rol es 'admin' o cualquier otro.
 router
   .route('/')
-  .get(authorizeRoles('admin', 'superadmin'), checkModuleAccess('roles'), getRoles)
-  .post(authorizeRoles('admin', 'superadmin'), checkModuleAccess('roles'), createRol);
+  .get(authorizePerm('roles', 'ver'), checkModuleAccess('roles'), getRoles)
+  .post(authorizePerm('roles', 'crear'), checkModuleAccess('roles'), createRol);
 
 router
   .route('/:id')
-  .get(authorizeRoles('admin', 'superadmin'), checkModuleAccess('roles'), getRolById)
-  .put(authorizeRoles('admin', 'superadmin'), checkModuleAccess('roles'), updateRol)
-  .delete(authorizeRoles('admin', 'superadmin'), checkModuleAccess('roles'), deleteRol);
+  .get(authorizePerm('roles', 'ver'), checkModuleAccess('roles'), getRolById)
+  .put(authorizePerm('roles', 'editar'), checkModuleAccess('roles'), updateRol)
+  .delete(authorizePerm('roles', 'eliminar'), checkModuleAccess('roles'), deleteRol);
 
 module.exports = router;

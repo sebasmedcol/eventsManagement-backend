@@ -24,13 +24,14 @@ const {
   linkVentaToFicha,
 } = require('../controllers/eventoFichaController');
 
-const { protect, authorizePerm, requirePlan } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 const { checkLimitMiddleware, checkModuleAccess } = require('../middlewares/planMiddleware');
 
 router.use(protect);
 router.use(authorizePerm('eventos', 'ver'));
-// Eventos Premium requieren plan pro o premium
-router.use(requirePlan(['pro', 'premium', 'super']));
+// Acceso al módulo según plansConfig (free_trial, basico, pro, premium, super).
+// checkModuleAccess lee plansConfig.js donde free_trial tiene eventosPremium: true.
+router.use(checkModuleAccess('eventosPremium'));
 
 router.get('/notificaciones', getNotificacionesEventosPremium);
 router.put('/notificaciones/:fichaId/leida', marcarNotificacionEventoPremiumLeida);

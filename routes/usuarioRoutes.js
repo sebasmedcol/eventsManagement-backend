@@ -7,20 +7,22 @@ const {
   updateUsuario,
   deleteUsuario,
 } = require('../controllers/usuarioController');
-const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
+const { protect, authorizePerm } = require('../middlewares/authMiddleware');
 const { checkLimitMiddleware, checkModuleAccess } = require('../middlewares/planMiddleware');
 
 router.use(protect);
 
+// authorizeRoles fue reemplazado por authorizePerm para que usuarios con rol_id
+// que tengan permisos sobre el módulo 'usuarios' puedan acceder.
 router
   .route('/')
-  .get(authorizeRoles('admin', 'superadmin'), checkModuleAccess('usuarios'), getUsuarios)
-  .post(authorizeRoles('admin', 'superadmin'), checkModuleAccess('usuarios'), checkLimitMiddleware('usuario'), createUsuario);
+  .get(authorizePerm('usuarios', 'ver'), checkModuleAccess('usuarios'), getUsuarios)
+  .post(authorizePerm('usuarios', 'crear'), checkModuleAccess('usuarios'), checkLimitMiddleware('usuario'), createUsuario);
 
 router
   .route('/:id')
-  .get(authorizeRoles('admin', 'superadmin'), checkModuleAccess('usuarios'), getUsuarioById)
-  .put(authorizeRoles('admin', 'superadmin'), checkModuleAccess('usuarios'), updateUsuario)
-  .delete(authorizeRoles('admin', 'superadmin'), checkModuleAccess('usuarios'), deleteUsuario);
+  .get(authorizePerm('usuarios', 'ver'), checkModuleAccess('usuarios'), getUsuarioById)
+  .put(authorizePerm('usuarios', 'editar'), checkModuleAccess('usuarios'), updateUsuario)
+  .delete(authorizePerm('usuarios', 'eliminar'), checkModuleAccess('usuarios'), deleteUsuario);
 
 module.exports = router;
