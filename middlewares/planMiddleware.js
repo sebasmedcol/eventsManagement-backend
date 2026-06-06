@@ -183,6 +183,10 @@ const checkLimitMiddleware = (resourceType) => {
 /**
  * Factory: verifica acceso a un módulo.
  * SuperAdmin siempre tiene acceso a cualquier módulo.
+ *
+ * Comportamiento cuando el trial expiró:
+ *   - GET  → se permite (modo solo lectura)
+ *   - POST / PUT / DELETE / PATCH → se bloquea con TRIAL_EXPIRED
  */
 const checkModuleAccess = (moduleName) => {
   return async (req, res, next) => {
@@ -207,6 +211,11 @@ const checkModuleAccess = (moduleName) => {
       if (planId === 'free_trial') {
         const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
         if (trialStatus.expirado) {
+          // Permitir lecturas (GET) aunque el trial haya expirado
+          if (req.method === 'GET') {
+            req.trialExpired = true; // marcar para que los controladores lo sepan si lo necesitan
+            return next();
+          }
           return res.status(403).json({
             success: false,
             code: 'TRIAL_EXPIRED',
