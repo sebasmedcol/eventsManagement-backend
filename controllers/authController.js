@@ -320,7 +320,14 @@ const getMe = async (req, res) => {
       .select('-password')
       .populate('empresa', 'nombre email plan estado estadoAprobacion')
       .populate('rol_id', 'nombre descripcion permisos activo');
-    res.json(usuario);
+    const out = usuario ? usuario.toObject({ flattenMaps: true }) : null;
+    if (!out) {
+      res.status(404);
+      throw new Error('Usuario no encontrado');
+    }
+    out.isEmpresaSuperAdmin = req.user?.isEmpresaSuperAdmin === true;
+    out.isOwnerSuperAdmin = req.user?.isOwnerSuperAdmin === true;
+    res.json(out);
   } catch (error) {
     res.status(500).json({
       message: error.message,

@@ -104,7 +104,7 @@ const attachPlanInfo = async (req, res, next) => {
 
     let trialStatus = null;
     if (planId === 'free_trial' && empresa.fechaCreacion) {
-      trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
+      trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias ?? 7);
       if (trialStatus.expirado) req.trialExpired = true;
     }
 
@@ -144,7 +144,7 @@ const checkLimitMiddleware = (resourceType) => {
       const planConfig = getPlanConfig(planId);
 
       if (planId === 'free_trial') {
-        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
+        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias ?? 7);
         if (trialStatus.expirado) {
           return res.status(403).json({
             success: false,
@@ -209,7 +209,7 @@ const checkModuleAccess = (moduleName) => {
       const planConfig = getPlanConfig(planId);
 
       if (planId === 'free_trial') {
-        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
+        const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias ?? 7);
         if (trialStatus.expirado) {
           // Permitir lecturas (GET) aunque el trial haya expirado
           if (req.method === 'GET') {

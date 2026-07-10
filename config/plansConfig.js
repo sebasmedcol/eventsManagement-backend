@@ -16,6 +16,8 @@ const PLANS_CONFIG = {
     descripcion: 'Acceso completo por 7 días para evaluar la plataforma',
     duracionDias: 7,
     precio: 0,
+    precioCents: 0,
+    wompiReferencePrefix: 'PLAN-TRIAL',
     limites: {
       empresas: 1,
       clientes: 30,
@@ -73,6 +75,8 @@ const PLANS_CONFIG = {
     slogan: 'Organiza tu operación diaria',
     descripcion: 'Ideal para pequeños negocios de eventos, DJs, decoradores',
     precio: 29.99,
+    precioCents: 11990000,
+    wompiReferencePrefix: 'PLAN-BASICO',
     perfilCliente: 'Pequeños negocios, DJs, decoradores, operadores pequeños',
     limites: {
       clientes: 100,
@@ -129,6 +133,8 @@ const PLANS_CONFIG = {
     slogan: 'Escala y automatiza tu negocio',
     descripcion: 'Para empresas en crecimiento con necesidades avanzadas',
     precio: 79.99,
+    precioCents: 31990000,
+    wompiReferencePrefix: 'PLAN-PRO',
     perfilCliente: 'Empresas con flujo constante, operadores medianos, agencias',
     limites: {
       clientes: 500,
@@ -185,6 +191,8 @@ const PLANS_CONFIG = {
     slogan: 'Operación empresarial sin límites',
     descripcion: 'Solución completa sin límites para grandes empresas',
     precio: 199.99,
+    precioCents: 79990000,
+    wompiReferencePrefix: 'PLAN-PREMIUM',
     perfilCliente: 'Empresas grandes, operadores con alto volumen, agencias múltiples',
     limites: {
       clientes: -1,
@@ -452,6 +460,24 @@ function getRecommendedUpgrade(currentPlanId, usage = {}) {
   return needsUpgrade ? planOrder[currentIndex + 1] : null;
 }
 
+function getPlanPriceCents(planId) {
+  const plan = getPlanConfig(planId);
+  return plan.precioCents ?? 0;
+}
+
+function isPaidPlan(planId) {
+  const normalized = normalizePlanId(planId);
+  return normalized !== 'free_trial' && getPlanPriceCents(normalized) > 0;
+}
+
+function generatePaymentReference(planId, empresaId) {
+  const plan = getPlanConfig(planId);
+  const prefix = plan.wompiReferencePrefix || 'PLAN';
+  const ts = Date.now().toString(36);
+  const emp = String(empresaId).slice(-6);
+  return `${prefix}-${emp}-${ts}`.toUpperCase();
+}
+
 module.exports = {
   PLANS_CONFIG,
   ROUTE_TO_MODULE_MAP,
@@ -468,4 +494,7 @@ module.exports = {
   getAllLimitsWithUsage,
   calculateTrialStatus,
   getRecommendedUpgrade,
+  getPlanPriceCents,
+  isPaidPlan,
+  generatePaymentReference,
 };

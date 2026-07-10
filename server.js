@@ -5,6 +5,9 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 
+// Cargar variables de entorno ANTES de importar módulos que las consumen.
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 // Importar middlewares
 const errorHandler = require('./middlewares/errorMiddleware');
 
@@ -24,15 +27,23 @@ const empresaAdminRoutes = require('./routes/empresaAdminRoutes');
 const rolRoutes = require('./routes/rolRoutes');
 const configRoutes = require('./routes/configRoutes');
 const planRoutes = require('./routes/planRoutes');
+const suscripcionRoutes = require('./routes/suscripcionRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 
-// Cargar variables de entorno
-dotenv.config();
+const { validateWompiConfig } = require('./config/wompiConfig');
 
 // Crear usuarios iniciales (admin de tenant y superadmin)
 const { crearUsuarioAdmin, crearUsuarioSuperAdmin } = require('./config/adminConfig');
 
 // Inicializar Express
 const app = express();
+
+try {
+  validateWompiConfig();
+} catch (wompiErr) {
+  console.error(wompiErr.message);
+  process.exit(1);
+}
 
 // Middlewares
 const allowedOrigins = [
@@ -74,6 +85,8 @@ app.use('/api/empresas-admin', empresaAdminRoutes);
 app.use('/api/roles', rolRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/config', planRoutes);
+app.use('/api/subscriptions', suscripcionRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);

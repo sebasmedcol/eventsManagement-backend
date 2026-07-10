@@ -16,6 +16,7 @@ const MODULOS_PERMISOS = [
   'productos',
   'ventas',
   'eventos',
+  'eventosPremium',
   'consecutivos',
   'cotizaciones',
   'disponibilidad',

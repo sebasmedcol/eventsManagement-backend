@@ -83,6 +83,28 @@ const empresaSchema = mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // --- Suscripción SaaS (pasarela Wompi) ---
+    estadoSuscripcion: {
+      type: String,
+      enum: ['trial', 'activa', 'pendiente_pago', 'past_due', 'cancelada', 'expirada'],
+      default: 'trial',
+    },
+    fechaInicioSuscripcion: Date,
+    fechaProximoCobro: Date,
+    fechaFinSuscripcion: Date,
+    wompiPaymentSourceId: String,
+    wompiCustomerEmail: String,
+    metodoPagoTipo: {
+      type: String,
+      enum: ['CARD', 'NEQUI', null],
+      default: null,
+    },
+    metodoPagoUltimos4: String,
+    autoRenovacion: {
+      type: Boolean,
+      default: true,
+    },
+    cancelacionSolicitadaEn: Date,
   },
   {
     timestamps: true,

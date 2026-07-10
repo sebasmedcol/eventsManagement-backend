@@ -3,6 +3,11 @@ const Usuario = require('../models/usuarioModel');
 const Empresa = require('../models/empresaModel');
 const Rol = require('../models/rolModel');
 
+const SUPERADMIN_USERNAME =
+  process.env.SUPERADMIN_USER && process.env.SUPERADMIN_USER.trim() !== ''
+    ? process.env.SUPERADMIN_USER.trim()
+    : 'superadmin';
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -39,6 +44,13 @@ const protect = async (req, res, next) => {
       const userObject = usuario.toObject({ flattenMaps: true });
       userObject.empresaId = usuario.empresa;
       userObject.rol = usuario.rol;
+      userObject.empresaNombre = empresa.nombre;
+      userObject.isEmpresaSuperAdmin = empresa.nombre === 'SuperAdmin';
+      userObject.isOwnerSuperAdmin =
+        userObject.isEmpresaSuperAdmin &&
+        usuario.rol === 'superadmin' &&
+        usuario.esAdminPrincipal === true &&
+        usuario.nombreUsuario === SUPERADMIN_USERNAME;
       
       // Si el usuario tiene un rol_id asignado, copiar los permisos del rol
       if (usuario.rol_id && usuario.rol_id.activo) {
@@ -64,6 +76,12 @@ const protect = async (req, res, next) => {
 
 const authorizeRoles = (...roles) => {
   return (req, res, next) => {
+    if (req.user?.isEmpresaSuperAdmin && roles.includes('superadmin')) {
+      if (!req.user.isOwnerSuperAdmin) {
+        res.status(403);
+        throw new Error('No autorizado, rol insuficiente');
+      }
+    }
     if (!req.user || !req.user.rol || !roles.includes(req.user.rol)) {
       res.status(403);
       throw new Error('No autorizado, rol insuficiente');
@@ -79,9 +97,15 @@ const authorizePerm = (modulo, accion) => {
       throw new Error('No autorizado');
     }
 
+    if (req.user.isOwnerSuperAdmin) {
+      return next();
+    }
+
+    const isEmpresaSuperAdmin = req.user.isEmpresaSuperAdmin === true;
     const rol = req.user.rol;
     // Superadmin, admin y admin principal tienen acceso total
-    if (rol === 'superadmin' || rol === 'admin' || req.user.esAdminPrincipal) {
+    // EXCEPCIÓN: En la empresa "SuperAdmin" solo el owner tiene acceso total. Los demás respetan permisos.
+    if (!isEmpresaSuperAdmin && (rol === 'superadmin' || rol === 'admin' || req.user.esAdminPrincipal)) {
       return next();
     }
 
