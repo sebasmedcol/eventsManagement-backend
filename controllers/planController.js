@@ -68,6 +68,7 @@ const getPlanInfo = async (req, res) => {
           caracteristicas: todasLasCaracteristicas,
           limites: {},        // Sin límites
           trial: null,
+          periodoActual: null,
           upgrade: null,
           isSuperAdmin: true, // Flag para el frontend
           fechaConsulta: new Date().toISOString(),
@@ -84,6 +85,48 @@ const getPlanInfo = async (req, res) => {
     let trialStatus = null;
     if (planId === 'free_trial' && empresa.fechaCreacion) {
       trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias || 14);
+    }
+
+    // Días restantes del período actual, para CUALQUIER plan (no solo trial).
+    // - Si es free_trial: se reutiliza el cálculo de trialStatus.
+    // - Si es un plan pago (basico/pro/premium): se calcula comparando la
+    //   fecha actual del servidor contra `empresa.fechaProximoCobro`, que es
+    //   la fecha del próximo cobro guardada en la BD (se actualiza en cada
+    //   ciclo de facturación desde suscripcionService).
+    let periodoActual = null;
+    if (trialStatus) {
+      periodoActual = {
+        diasRestantes: trialStatus.diasRestantes,
+        fechaFin: trialStatus.fechaExpiracion,
+        expirado: trialStatus.expirado,
+      };
+    } else {
+      // Fecha de referencia para el fin del período actual: se prioriza el
+      // próximo cobro real; si la empresa no pasó por el flujo de pago
+      // (ej. plan asignado manualmente), se estima a partir del inicio de
+      // la suscripción o, en su defecto, de la fecha de creación de la
+      // empresa, usando el mismo ciclo de 30 días que usa el resto del
+      // sistema (ver calcularFechaProximoCobro en suscripcionService).
+      const fechaBase =
+        empresa.fechaProximoCobro ||
+        (empresa.fechaInicioSuscripcion
+          ? new Date(new Date(empresa.fechaInicioSuscripcion).getTime() + 30 * 24 * 60 * 60 * 1000)
+          : null) ||
+        (empresa.fechaCreacion
+          ? new Date(new Date(empresa.fechaCreacion).getTime() + 30 * 24 * 60 * 60 * 1000)
+          : null);
+
+      if (fechaBase) {
+        const ahora = new Date();
+        const fechaFin = new Date(fechaBase);
+        const msRestantes = fechaFin.getTime() - ahora.getTime();
+        const diasRestantes = Math.max(0, Math.ceil(msRestantes / (1000 * 60 * 60 * 24)));
+        periodoActual = {
+          diasRestantes,
+          fechaFin,
+          expirado: msRestantes <= 0,
+        };
+      }
     }
 
     const recommendedUpgrade = getRecommendedUpgrade(planId, usage);
@@ -108,6 +151,7 @@ const getPlanInfo = async (req, res) => {
         }, {}),
         limites: limitsWithUsage,
         trial: trialStatus,
+        periodoActual,
         upgrade: recommendedPlan ? {
           recomendado: true,
           planId: recommendedUpgrade,
