@@ -10,6 +10,9 @@ const {
   checkoutPreviewHandler,
   createPaymentSourceHandler,
   getPaymentSourceStatusHandler,
+  getPaymentHistoryHandler,
+  cancelSubscriptionHandler,
+  reactivateSubscriptionHandler,
 } = require('../controllers/suscripcionController');
 
 router.use(verifyToken);
@@ -22,5 +25,9 @@ router.post('/pay-with-3ds', payWith3DSHandler);
 router.get('/transactions/:id/status', getTransactionStatusHandler);
 router.post('/payment-sources', createPaymentSourceHandler);
 router.get('/payment-sources/:id/status', getPaymentSourceStatusHandler);
+
+router.get('/payments', getPaymentHistoryHandler);
+router.post('/cancel', cancelSubscriptionHandler);
+router.post('/reactivate', reactivateSubscriptionHandler);
 
 module.exports = router;

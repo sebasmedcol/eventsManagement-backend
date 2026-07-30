@@ -145,8 +145,8 @@ const register = async (req, res) => {
       throw new Error(passwordError);
     }
 
-    const planesPermitidos = ['free', 'basic', 'pro', 'premium'];
-    const planFinal = planesPermitidos.includes(planTrim) ? planTrim : 'free';
+    const planesPermitidos = ['free_trial', 'basic', 'pro', 'premium'];
+    const planFinal = planesPermitidos.includes(planTrim) ? planTrim : 'free_trial';
 
     const usuarioExistente = await Usuario.findOne({
       nombreUsuario: new RegExp(`^${escapeRegex(nombreUsuarioTrim)}$`, 'i'),

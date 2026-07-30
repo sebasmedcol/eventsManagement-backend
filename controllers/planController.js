@@ -20,6 +20,7 @@ const {
 } = require('../config/plansConfig');
 const { getAllResourceUsage } = require('../middlewares/planMiddleware');
 const Empresa = require('../models/empresaModel');
+const Suscripcion = require('../models/suscripcionModel');
 
 /** Devuelve true si la empresa es la cuenta SuperAdmin global */
 const esSuperAdmin = (empresa) => empresa && empresa.nombre === 'SuperAdmin';
@@ -132,6 +133,10 @@ const getPlanInfo = async (req, res) => {
     const recommendedUpgrade = getRecommendedUpgrade(planId, usage);
     const recommendedPlan = recommendedUpgrade ? getPlanConfig(recommendedUpgrade) : null;
 
+    // Obtener info adicional de suscripción activa si existe
+    const suscripcion = await Suscripcion.findOne({ empresa: empresaId }).sort({ createdAt: -1 });
+    const requiereAccionPago = empresa.estadoSuscripcion === 'past_due' || empresa.estadoSuscripcion === 'expirada' || (trialStatus && trialStatus.expirado);
+
     res.json({
       success: true,
       data: {
@@ -141,6 +146,10 @@ const getPlanInfo = async (req, res) => {
           descripcion: planConfig.descripcion,
           precio: planConfig.precio || 0,
         },
+        estadoSuscripcion: empresa.estadoSuscripcion || 'activa',
+        fechaProximoCobro: empresa.fechaProximoCobro || null,
+        autoRenovacion: suscripcion ? suscripcion.autoRenovacion : false,
+        requiereAccionPago,
         modulos: Object.entries(planConfig.modulos).reduce((acc, [key, value]) => {
           acc[key] = { disponible: value, nombre: MODULE_NAMES[key] || key };
           return acc;

@@ -15,6 +15,9 @@ const {
 } = require('../services/suscripcionService');
 const { normalizePlanId, getPlanConfig, getPlanPriceCents } = require('../config/plansConfig');
 const PagoSuscripcion = require('../models/pagoSuscripcionModel');
+const Suscripcion = require('../models/suscripcionModel');
+const Empresa = require('../models/empresaModel');
+const { sendEmail } = require('../services/emailService');
 
 const requireBillingAdmin = (req, res, next) => {
   if (req.user?.isEmpresaSuperAdmin) {
@@ -309,6 +312,83 @@ const getPaymentSourceStatusHandler = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/subscriptions/payments
+ */
+const getPaymentHistoryHandler = async (req, res) => {
+  try {
+    const empresaId = getEmpresaId(req.user);
+    const payments = await PagoSuscripcion.find({ empresa: empresaId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: payments });
+  } catch (error) {
+    console.error('[Subscriptions] payment history:', error.message);
+    res.status(500).json({ success: false, message: 'Error al obtener el historial de pagos.' });
+  }
+};
+
+/**
+ * POST /api/subscriptions/cancel
+ */
+const cancelSubscriptionHandler = async (req, res) => {
+  try {
+    const empresaId = getEmpresaId(req.user);
+    const suscripcion = await Suscripcion.findOne({ empresa: empresaId });
+    if (!suscripcion) {
+      return res.status(404).json({ success: false, message: 'No hay suscripción activa.' });
+    }
+
+    suscripcion.autoRenovacion = false;
+    await suscripcion.save();
+
+    const empresa = await Empresa.findById(empresaId);
+    if (empresa) {
+      const planConfig = getPlanConfig(suscripcion.planId);
+      const fechaFinStr = suscripcion.fechaProximoCobro 
+        ? new Date(suscripcion.fechaProximoCobro).toLocaleDateString()
+        : 'el final de tu ciclo';
+        
+      await sendEmail({
+        to: empresa.email,
+        templateName: 'suscripcion_cancelada',
+        data: {
+          nombrePlan: planConfig.nombre,
+          fechaFin: fechaFinStr
+        }
+      });
+    }
+
+    res.json({ success: true, message: 'Renovación automática cancelada.' });
+  } catch (error) {
+    console.error('[Subscriptions] cancel:', error.message);
+    res.status(500).json({ success: false, message: 'Error al cancelar la suscripción.' });
+  }
+};
+
+/**
+ * POST /api/subscriptions/reactivate
+ */
+const reactivateSubscriptionHandler = async (req, res) => {
+  try {
+    const empresaId = getEmpresaId(req.user);
+    const suscripcion = await Suscripcion.findOne({ empresa: empresaId });
+    if (!suscripcion) {
+      return res.status(404).json({ success: false, message: 'No hay suscripción activa.' });
+    }
+
+    if (suscripcion.estado === 'cancelada' || suscripcion.estado === 'expirada') {
+      return res.status(400).json({ success: false, message: 'La suscripción ya expiró o fue cancelada, debes adquirir un plan nuevamente.' });
+    }
+
+    suscripcion.autoRenovacion = true;
+    await suscripcion.save();
+
+    res.json({ success: true, message: 'Renovación automática reactivada.' });
+  } catch (error) {
+    console.error('[Subscriptions] reactivate:', error.message);
+    res.status(500).json({ success: false, message: 'Error al reactivar la suscripción.' });
+  }
+};
+
 module.exports = {
   requireBillingAdmin,
   getAcceptanceTokensHandler,
@@ -318,4 +398,7 @@ module.exports = {
   checkoutPreviewHandler,
   createPaymentSourceHandler,
   getPaymentSourceStatusHandler,
+  getPaymentHistoryHandler,
+  cancelSubscriptionHandler,
+  reactivateSubscriptionHandler,
 };

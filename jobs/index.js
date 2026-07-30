@@ -6,6 +6,7 @@
 
 const { registrarCobrosMensuales } = require('./cobrosMensuales');
 const { registrarReintentosPago } = require('./reintentosPago');
+const { registrarRecordatoriosPago } = require('./recordatoriosPago');
 
 function initJobs() {
   const enabled = process.env.ENABLE_CRON_JOBS === 'true';
@@ -18,6 +19,7 @@ function initJobs() {
   console.log('[Jobs] Iniciando cron jobs...');
   registrarCobrosMensuales();
   registrarReintentosPago();
+  registrarRecordatoriosPago();
   console.log('[Jobs] Todos los cron jobs registrados.');
 }
 

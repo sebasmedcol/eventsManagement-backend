@@ -5,6 +5,7 @@
 const Empresa = require('../models/empresaModel');
 const Suscripcion = require('../models/suscripcionModel');
 const PagoSuscripcion = require('../models/pagoSuscripcionModel');
+const { sendEmail } = require('./emailService');
 const {
   getPlanConfig,
   normalizePlanId,
@@ -525,6 +526,20 @@ async function procesarWebhookTransaccion(transaction) {
       );
     }
 
+    const planConfig = getPlanConfig(pago.planId);
+    const empresaDoc = await Empresa.findById(pago.empresa);
+    if (empresaDoc) {
+      await sendEmail({
+        to: empresaDoc.email,
+        templateName: 'pago_exitoso',
+        data: {
+          nombrePlan: planConfig.nombre,
+          monto: transaction.amount_in_cents / 100,
+          referencia: transaction.reference
+        }
+      });
+    }
+
     return { processed: true, reason: 'activated', status: 'APPROVED' };
   }
 
@@ -554,6 +569,20 @@ async function procesarWebhookTransaccion(transaction) {
     }
 
     await marcarPagoFallido(transaction.id, transaction.status, transaction);
+    
+    const planConfig = getPlanConfig(pago.planId);
+    const empresaDoc = await Empresa.findById(pago.empresa);
+    if (empresaDoc) {
+      await sendEmail({
+        to: empresaDoc.email,
+        templateName: 'pago_fallido',
+        data: {
+          nombrePlan: planConfig.nombre,
+          monto: transaction.amount_in_cents / 100
+        }
+      });
+    }
+
     return { processed: true, reason: 'payment_failed', status: transaction.status };
   }
 
