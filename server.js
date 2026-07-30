@@ -31,6 +31,7 @@ const suscripcionRoutes = require('./routes/suscripcionRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 
 const { validateWompiConfig } = require('./config/wompiConfig');
+const { initJobs } = require('./jobs');
 
 // Crear usuarios iniciales (admin de tenant y superadmin)
 const { crearUsuarioAdmin, crearUsuarioSuperAdmin } = require('./config/adminConfig');
@@ -102,6 +103,9 @@ mongoose
     // Crear usuario admin inicial si no existe
     crearUsuarioAdmin();
     crearUsuarioSuperAdmin();
+
+    // Iniciar cron jobs (solo si ENABLE_CRON_JOBS=true)
+    initJobs();
     
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en el puerto ${PORT} en modo ${process.env.NODE_ENV}`);

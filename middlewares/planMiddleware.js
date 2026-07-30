@@ -140,6 +140,37 @@ const checkLimitMiddleware = (resourceType) => {
       }
       // ────────────────────────────────────────────────────────────────────
 
+      // ── Verificación estado suscripción ──────────────────────────────────
+      const estadoSus = empresa.estadoSuscripcion;
+      if (estadoSus === 'expirada' || estadoSus === 'cancelada') {
+        return res.status(403).json({
+          success: false,
+          code: 'SUBSCRIPTION_EXPIRED',
+          message: 'Tu suscripción ha expirado. Renueva tu plan para continuar usando NextEvents.',
+          estadoSuscripcion: estadoSus,
+        });
+      }
+
+      if (estadoSus === 'past_due') {
+        // Período de gracia de 7 días desde fechaProximoCobro
+        const diasMora = empresa.fechaProximoCobro
+          ? Math.floor((Date.now() - new Date(empresa.fechaProximoCobro).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+        if (diasMora > 7) {
+          return res.status(403).json({
+            success: false,
+            code: 'SUBSCRIPTION_EXPIRED',
+            message: 'Tu pago está vencido y el período de gracia ha expirado. Actualiza tu método de pago.',
+            estadoSuscripcion: estadoSus,
+            diasMora,
+          });
+        }
+        // Dentro del período de gracia: marcar para banners pero permitir
+        req.paymentPastDue = true;
+        req.diasMoraPago = diasMora;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
 
@@ -184,9 +215,12 @@ const checkLimitMiddleware = (resourceType) => {
  * Factory: verifica acceso a un módulo.
  * SuperAdmin siempre tiene acceso a cualquier módulo.
  *
- * Comportamiento cuando el trial expiró:
- *   - GET  → se permite (modo solo lectura)
- *   - POST / PUT / DELETE / PATCH → se bloquea con TRIAL_EXPIRED
+ * Comportamiento según estado de suscripción:
+ *   - trial expirado / expirada / cancelada:
+ *       GET  → se permite (modo solo lectura)
+ *       POST / PUT / DELETE / PATCH → 403
+ *   - past_due ≤ 7 días: acceso completo + req.paymentPastDue = true
+ *   - past_due > 7 días: igual que expirada
  */
 const checkModuleAccess = (moduleName) => {
   return async (req, res, next) => {
@@ -205,6 +239,46 @@ const checkModuleAccess = (moduleName) => {
       if (esSuperAdmin(empresa)) return next();
       // ────────────────────────────────────────────────────────────────────
 
+      // ── Verificación estado suscripción ──────────────────────────────────
+      const estadoSus = empresa.estadoSuscripcion;
+
+      if (estadoSus === 'expirada' || estadoSus === 'cancelada') {
+        if (req.method === 'GET') {
+          req.subscriptionExpired = true;
+          return next();
+        }
+        return res.status(403).json({
+          success: false,
+          code: 'SUBSCRIPTION_EXPIRED',
+          message: 'Tu suscripción ha expirado. Renueva tu plan para continuar usando NextEvents.',
+          estadoSuscripcion: estadoSus,
+        });
+      }
+
+      if (estadoSus === 'past_due') {
+        const diasMora = empresa.fechaProximoCobro
+          ? Math.floor((Date.now() - new Date(empresa.fechaProximoCobro).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+        if (diasMora > 7) {
+          if (req.method === 'GET') {
+            req.paymentPastDue = true;
+            req.subscriptionExpired = true;
+            return next();
+          }
+          return res.status(403).json({
+            success: false,
+            code: 'SUBSCRIPTION_EXPIRED',
+            message: 'Tu pago está vencido y el período de gracia ha expirado. Actualiza tu método de pago.',
+            estadoSuscripcion: estadoSus,
+            diasMora,
+          });
+        }
+        // Dentro del período de gracia: acceso completo + marcar
+        req.paymentPastDue = true;
+        req.diasMoraPago = diasMora;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
 
@@ -213,7 +287,7 @@ const checkModuleAccess = (moduleName) => {
         if (trialStatus.expirado) {
           // Permitir lecturas (GET) aunque el trial haya expirado
           if (req.method === 'GET') {
-            req.trialExpired = true; // marcar para que los controladores lo sepan si lo necesitan
+            req.trialExpired = true;
             return next();
           }
           return res.status(403).json({

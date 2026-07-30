@@ -17,6 +17,7 @@ const {
   createThreeDSTransaction,
   createPaymentSource,
   getPaymentSource,
+  createRecurringTransaction,
 } = require('./wompiService');
 
 const PAID_PLANS = ['basico', 'pro', 'premium'];
@@ -49,25 +50,7 @@ async function iniciarCheckout(empresaId, planId) {
   const plan = getPlanConfig(normalized);
   const amountInCents = getPlanPriceCents(normalized);
   const reference = generatePaymentReference(normalized, empresaId);
-
-  let suscripcion = await Suscripcion.findOne({ empresa: empresaId });
-  if (suscripcion) {
-    suscripcion.planId = normalized;
-    suscripcion.estado = 'pendiente_pago';
-    suscripcion.montoMensualCents = amountInCents;
-    await suscripcion.save();
-  } else {
-    suscripcion = await Suscripcion.create({
-      empresa: empresaId,
-      planId: normalized,
-      estado: 'pendiente_pago',
-      montoMensualCents: amountInCents,
-    });
-  }
-
-  await Empresa.findByIdAndUpdate(empresaId, {
-    estadoSuscripcion: 'pendiente_pago',
-  });
+  const suscripcion = await Suscripcion.findOne({ empresa: empresaId }).select('_id');
 
   const signature = generateIntegritySignature(reference, amountInCents);
 
@@ -108,14 +91,29 @@ async function crearPagoCon3DS({
     throw err;
   }
 
-  const suscripcion = await Suscripcion.findOne({ empresa: empresaId, planId: normalized });
-  if (!suscripcion || suscripcion.estado !== 'pendiente_pago') {
-    const err = new Error('No hay checkout pendiente. Inicie el proceso desde /planes.');
-    err.code = 'CHECKOUT_NOT_FOUND';
-    throw err;
+  let suscripcion = await Suscripcion.findOne({ empresa: empresaId });
+  if (!suscripcion) {
+    suscripcion = await Suscripcion.create({
+      empresa: empresaId,
+      planId: normalized,
+      estado: 'pendiente_pago',
+      montoMensualCents: getPlanPriceCents(normalized),
+      autoRenovacion: false,
+    });
+  } else if (suscripcion.estado !== 'activa') {
+    suscripcion.planId = normalized;
+    suscripcion.estado = 'pendiente_pago';
+    suscripcion.montoMensualCents = getPlanPriceCents(normalized);
+    await suscripcion.save();
   }
 
-  const amountInCents = suscripcion.montoMensualCents;
+  if (empresa.estadoSuscripcion !== 'activa') {
+    await Empresa.findByIdAndUpdate(empresaId, {
+      estadoSuscripcion: 'pendiente_pago',
+    });
+  }
+
+  const amountInCents = getPlanPriceCents(normalized);
   const signature = generateIntegritySignature(reference, amountInCents);
 
   let transaction;
@@ -256,7 +254,24 @@ async function marcarPagoFallido(wompiTransactionId, estado, respuestaWompi) {
   if (!pago) return null;
 
   if (pago.tipo === 'primer_pago') {
-    await Empresa.findByIdAndUpdate(pago.empresa, { estadoSuscripcion: 'pendiente_pago' });
+    const [empresa, suscripcion, pagoAprobado] = await Promise.all([
+      Empresa.findById(pago.empresa).select('estadoSuscripcion'),
+      Suscripcion.findOne({ empresa: pago.empresa }).select('estado'),
+      PagoSuscripcion.exists({
+        empresa: pago.empresa,
+        estado: 'APPROVED',
+        _id: { $ne: pago._id },
+      }),
+    ]);
+
+    const yaActiva =
+      empresa?.estadoSuscripcion === 'activa' ||
+      suscripcion?.estado === 'activa' ||
+      Boolean(pagoAprobado);
+
+    if (!yaActiva) {
+      await Empresa.findByIdAndUpdate(pago.empresa, { estadoSuscripcion: 'pendiente_pago' });
+    }
   }
   return pago;
 }
@@ -408,6 +423,73 @@ async function consultarEstadoFuentePago({ empresaId, paymentSourceId }) {
   return paymentSource;
 }
 
+async function procesarCobroMensual(suscripcion) {
+  const empresaId = suscripcion.empresa;
+  const isDryRun = process.env.CRON_DRY_RUN === 'true';
+
+  // Generar referencia única por empresa + mes
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const reference = `SUB-${String(empresaId).slice(-6)}-${yearMonth}`.toUpperCase();
+
+  // Idempotencia: si ya existe un pago PENDING/APPROVED para esta referencia, no duplicar
+  const existente = await PagoSuscripcion.findOne({ wompiReference: reference });
+  if (existente && ['PENDING', 'APPROVED'].includes(existente.estado)) {
+    console.log(`[Cron] Pago ya existe para ${reference} (${existente.estado}) — omitido.`);
+    return { skipped: true, reason: 'already_exists', reference };
+  }
+
+  if (isDryRun) {
+    console.log(`[Cron DRY_RUN] Habría cobrado ${suscripcion.montoMensualCents} COP a empresa ${empresaId} (ref: ${reference})`);
+    return { dryRun: true, reference, amountInCents: suscripcion.montoMensualCents };
+  }
+
+  const empresa = await Empresa.findById(empresaId).select('email wompiPaymentSourceId');
+  if (!empresa?.wompiPaymentSourceId) {
+    console.warn(`[Cron] Empresa ${empresaId} sin wompiPaymentSourceId — omitida.`);
+    return { skipped: true, reason: 'no_payment_source', empresaId };
+  }
+
+  const amountInCents = suscripcion.montoMensualCents;
+  const signature = generateIntegritySignature(reference, amountInCents);
+
+  let transaction;
+  try {
+    transaction = await createRecurringTransaction({
+      amountInCents,
+      reference,
+      customerEmail: empresa.email,
+      paymentSourceId: suscripcion.wompiPaymentSourceId,
+      signature,
+      installments: 1,
+    });
+  } catch (error) {
+    const msg =
+      error.response?.data?.error?.messages?.join?.(' ') ||
+      error.response?.data?.error?.reason ||
+      error.message;
+    console.error(`[Cron] Error Wompi para ${reference}:`, msg);
+    return { error: true, reference, message: msg };
+  }
+
+  // Registrar PagoSuscripcion de tipo renovacion
+  await PagoSuscripcion.create({
+    empresa: empresaId,
+    suscripcion: suscripcion._id,
+    planId: suscripcion.planId,
+    wompiTransactionId: transaction.id,
+    wompiReference: reference,
+    montoCents: amountInCents,
+    estado: transaction.status || 'PENDING',
+    tipo: 'renovacion',
+    metodoPago: suscripcion.metodoPago?.tipo || 'CARD',
+    respuestaWompi: transaction,
+  });
+
+  console.log(`[Cron] Transacción creada: ${transaction.id} | ${transaction.status} | ref: ${reference}`);
+  return { transactionId: transaction.id, reference, status: transaction.status };
+}
+
 async function procesarWebhookTransaccion(transaction) {
   if (!transaction?.id || !transaction?.reference) {
     return { processed: false, reason: 'missing_data' };
@@ -434,10 +516,43 @@ async function procesarWebhookTransaccion(transaction) {
       montoCents: transaction.amount_in_cents,
       respuestaWompi: transaction,
     });
+
+    // Si es renovación exitosa, resetear intentos fallidos
+    if (pago.tipo === 'renovacion') {
+      await Suscripcion.findOneAndUpdate(
+        { empresa: pago.empresa },
+        { intentosCobroFallidos: 0 }
+      );
+    }
+
     return { processed: true, reason: 'activated', status: 'APPROVED' };
   }
 
   if (['DECLINED', 'ERROR', 'VOIDED'].includes(transaction.status)) {
+    // Para renovaciones fallidas → marcar past_due e incrementar intentos
+    if (pago.tipo === 'renovacion') {
+      const suscripcion = await Suscripcion.findOne({ empresa: pago.empresa });
+      if (suscripcion) {
+        const nuevosIntentos = (suscripcion.intentosCobroFallidos || 0) + 1;
+        const nuevoEstado = nuevosIntentos >= 3 ? 'expirada' : 'past_due';
+
+        await Suscripcion.findOneAndUpdate(
+          { empresa: pago.empresa },
+          {
+            estado: nuevoEstado,
+            intentosCobroFallidos: nuevosIntentos,
+          }
+        );
+
+        await Empresa.findByIdAndUpdate(pago.empresa, {
+          estadoSuscripcion: nuevoEstado,
+          ...(nuevoEstado === 'expirada' ? { plan: 'free_trial' } : {}),
+        });
+
+        console.log(`[Webhook] Renovación fallida empresa ${pago.empresa}: intento ${nuevosIntentos}/3 → estado ${nuevoEstado}`);
+      }
+    }
+
     await marcarPagoFallido(transaction.id, transaction.status, transaction);
     return { processed: true, reason: 'payment_failed', status: transaction.status };
   }
@@ -458,6 +573,7 @@ module.exports = {
   marcarPagoFallido,
   crearFuentePagoRenovable,
   consultarEstadoFuentePago,
+  procesarCobroMensual,
   procesarWebhookTransaccion,
   isPaidPlan,
 };
