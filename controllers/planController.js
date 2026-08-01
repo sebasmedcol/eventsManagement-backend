@@ -137,6 +137,25 @@ const getPlanInfo = async (req, res) => {
     const suscripcion = await Suscripcion.findOne({ empresa: empresaId }).sort({ createdAt: -1 });
     const requiereAccionPago = empresa.estadoSuscripcion === 'past_due' || empresa.estadoSuscripcion === 'expirada' || (trialStatus && trialStatus.expirado);
 
+    const estadoSus = empresa.estadoSuscripcion;
+    let diasMoraPago = 0;
+    if (estadoSus === 'past_due' && empresa.fechaProximoCobro) {
+      diasMoraPago = Math.floor((Date.now() - new Date(empresa.fechaProximoCobro).getTime()) / (1000 * 60 * 60 * 24));
+    }
+    const periodoExpirado = periodoActual ? periodoActual.expirado === true : false;
+
+    let bloqueoMotivo = null;
+    if (estadoSus === 'expirada' || estadoSus === 'cancelada') bloqueoMotivo = 'SUBSCRIPTION_EXPIRED';
+    else if (estadoSus === 'past_due' && diasMoraPago > 7) bloqueoMotivo = 'SUBSCRIPTION_EXPIRED';
+    else if (planId === 'free_trial' && trialStatus && trialStatus.expirado) bloqueoMotivo = 'TRIAL_EXPIRED';
+    else if (periodoExpirado) bloqueoMotivo = planId === 'free_trial' ? 'TRIAL_EXPIRED' : 'SUBSCRIPTION_EXPIRED';
+
+    const accesoBloqueado = bloqueoMotivo !== null;
+    const bloqueoMensaje = !accesoBloqueado ? null
+      : bloqueoMotivo === 'TRIAL_EXPIRED'
+        ? 'Tu período de prueba ha finalizado. Elige un plan para seguir usando la plataforma.'
+        : 'Tu suscripción ha expirado. Renueva tu plan para volver a acceder.';
+
     res.json({
       success: true,
       data: {
@@ -150,12 +169,12 @@ const getPlanInfo = async (req, res) => {
         fechaProximoCobro: empresa.fechaProximoCobro || null,
         autoRenovacion: suscripcion ? suscripcion.autoRenovacion : false,
         requiereAccionPago,
+        acceso: { bloqueado: accesoBloqueado, motivo: bloqueoMotivo, mensaje: bloqueoMensaje },
         modulos: Object.entries(planConfig.modulos).reduce((acc, [key, value]) => {
+          // No se apaga por 'accesoBloqueado': un plan vencido sigue viendo
+          // sus módulos (modo solo lectura). El bloqueo de gestión se maneja
+          // vía 'acceso.bloqueado' + el backend (403 en POST/PUT/DELETE).
           acc[key] = { disponible: value, nombre: MODULE_NAMES[key] || key };
-          return acc;
-        }, {}),
-        caracteristicas: Object.entries(planConfig.caracteristicas).reduce((acc, [key, value]) => {
-          acc[key] = { disponible: value, nombre: FEATURE_NAMES[key] || key };
           return acc;
         }, {}),
         limites: limitsWithUsage,

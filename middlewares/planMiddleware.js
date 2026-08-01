@@ -73,6 +73,10 @@ function esSuperAdmin(empresa) {
   return empresa && empresa.nombre === 'SuperAdmin';
 }
 
+// Métodos de "lectura": nunca se bloquean por vencimiento de plan.
+const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+const isReadRequest = (req) => READ_METHODS.includes(req.method);
+
 // ─── Middlewares ─────────────────────────────────────────────────────────────
 
 /**
@@ -140,8 +144,8 @@ const checkLimitMiddleware = (resourceType) => {
       }
       // ────────────────────────────────────────────────────────────────────
 
-      // ── Verificación estado suscripción ──────────────────────────────────
-      const estadoSus = empresa.estadoSuscripcion;
+const estadoSus = empresa.estadoSuscripcion;
+
       if (estadoSus === 'expirada' || estadoSus === 'cancelada') {
         return res.status(403).json({
           success: false,
@@ -152,7 +156,6 @@ const checkLimitMiddleware = (resourceType) => {
       }
 
       if (estadoSus === 'past_due') {
-        // Período de gracia de 7 días desde fechaProximoCobro
         const diasMora = empresa.fechaProximoCobro
           ? Math.floor((Date.now() - new Date(empresa.fechaProximoCobro).getTime()) / (1000 * 60 * 60 * 24))
           : 0;
@@ -165,11 +168,9 @@ const checkLimitMiddleware = (resourceType) => {
             diasMora,
           });
         }
-        // Dentro del período de gracia: marcar para banners pero permitir
         req.paymentPastDue = true;
         req.diasMoraPago = diasMora;
       }
-      // ─────────────────────────────────────────────────────────────────────
 
       const planId = normalizePlanId(empresa.plan);
       const planConfig = getPlanConfig(planId);
@@ -180,8 +181,7 @@ const checkLimitMiddleware = (resourceType) => {
           return res.status(403).json({
             success: false,
             code: 'TRIAL_EXPIRED',
-            message: 'Tu período de prueba ha expirado. Por favor, selecciona un plan para continuar usando NextEvents.',
-            trialStatus,
+            message: 'Tu período de prueba ha expirado. Por favor, selecciona un plan para continuar.',
           });
         }
       }
@@ -217,7 +217,7 @@ const checkLimitMiddleware = (resourceType) => {
  *
  * Comportamiento según estado de suscripción:
  *   - trial expirado / expirada / cancelada:
- *       GET  → se permite (modo solo lectura)
+ *       GET / HEAD / OPTIONS → se permite (modo solo lectura)
  *       POST / PUT / DELETE / PATCH → 403
  *   - past_due ≤ 7 días: acceso completo + req.paymentPastDue = true
  *   - past_due > 7 días: igual que expirada
@@ -243,14 +243,15 @@ const checkModuleAccess = (moduleName) => {
       const estadoSus = empresa.estadoSuscripcion;
 
       if (estadoSus === 'expirada' || estadoSus === 'cancelada') {
-        if (req.method === 'GET') {
+        if (isReadRequest(req)) {           // GET/HEAD/OPTIONS permitido (solo lectura)
           req.subscriptionExpired = true;
+          req.readOnlyMode = true;
           return next();
         }
-        return res.status(403).json({
+        return res.status(403).json({        // mutaciones bloqueadas
           success: false,
           code: 'SUBSCRIPTION_EXPIRED',
-          message: 'Tu suscripción ha expirado. Renueva tu plan para continuar usando NextEvents.',
+          message: 'Tu suscripción ha expirado. Renueva tu plan para volver a gestionar tu información.',
           estadoSuscripcion: estadoSus,
         });
       }
@@ -260,15 +261,16 @@ const checkModuleAccess = (moduleName) => {
           ? Math.floor((Date.now() - new Date(empresa.fechaProximoCobro).getTime()) / (1000 * 60 * 60 * 24))
           : 0;
         if (diasMora > 7) {
-          if (req.method === 'GET') {
+          if (isReadRequest(req)) {
             req.paymentPastDue = true;
             req.subscriptionExpired = true;
+            req.readOnlyMode = true;
             return next();
           }
           return res.status(403).json({
             success: false,
             code: 'SUBSCRIPTION_EXPIRED',
-            message: 'Tu pago está vencido y el período de gracia ha expirado. Actualiza tu método de pago.',
+            message: 'Tu pago está vencido y el período de gracia ha expirado. Actualiza tu método de pago para seguir gestionando.',
             estadoSuscripcion: estadoSus,
             diasMora,
           });
@@ -285,15 +287,16 @@ const checkModuleAccess = (moduleName) => {
       if (planId === 'free_trial') {
         const trialStatus = calculateTrialStatus(empresa.fechaCreacion, planConfig.duracionDias ?? 7);
         if (trialStatus.expirado) {
-          // Permitir lecturas (GET) aunque el trial haya expirado
-          if (req.method === 'GET') {
+          // Permitir lecturas (GET/HEAD/OPTIONS) aunque el trial haya expirado
+          if (isReadRequest(req)) {
             req.trialExpired = true;
+            req.readOnlyMode = true;
             return next();
           }
           return res.status(403).json({
             success: false,
             code: 'TRIAL_EXPIRED',
-            message: 'Tu período de prueba ha expirado. Por favor, selecciona un plan para continuar.',
+            message: 'Tu período de prueba ha expirado. Selecciona un plan para volver a gestionar tu información.',
           });
         }
       }
