@@ -74,8 +74,8 @@ const PLANS_CONFIG = {
     nombre: 'Básico',
     slogan: 'Organiza tu operación diaria',
     descripcion: 'Ideal para pequeños negocios de eventos, DJs, decoradores',
-    precio: 29.99,
-    precioCents: 11990000,
+    precio: 30000,
+    precioCents: 3000000,
     wompiReferencePrefix: 'PLAN-BASICO',
     perfilCliente: 'Pequeños negocios, DJs, decoradores, operadores pequeños',
     limites: {
@@ -132,8 +132,8 @@ const PLANS_CONFIG = {
     nombre: 'Pro',
     slogan: 'Escala y automatiza tu negocio',
     descripcion: 'Para empresas en crecimiento con necesidades avanzadas',
-    precio: 79.99,
-    precioCents: 31990000,
+    precio: 80000,
+    precioCents: 8000000,
     wompiReferencePrefix: 'PLAN-PRO',
     perfilCliente: 'Empresas con flujo constante, operadores medianos, agencias',
     limites: {
@@ -190,8 +190,8 @@ const PLANS_CONFIG = {
     nombre: 'Premium',
     slogan: 'Operación empresarial sin límites',
     descripcion: 'Solución completa sin límites para grandes empresas',
-    precio: 199.99,
-    precioCents: 79990000,
+    precio: 180000,
+    precioCents: 18000000,
     wompiReferencePrefix: 'PLAN-PREMIUM',
     perfilCliente: 'Empresas grandes, operadores con alto volumen, agencias múltiples',
     limites: {

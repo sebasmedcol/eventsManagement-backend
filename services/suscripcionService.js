@@ -19,6 +19,7 @@ const {
   createPaymentSource,
   getPaymentSource,
   createRecurringTransaction,
+  getTransactionPublic,
 } = require('./wompiService');
 
 const PAID_PLANS = ['basico', 'pro', 'premium'];
@@ -56,7 +57,7 @@ async function iniciarCheckout(empresaId, planId) {
   const signature = generateIntegritySignature(reference, amountInCents);
 
   return {
-    suscripcionId: suscripcion._id,
+    suscripcionId: suscripcion ? suscripcion._id : null,
     planId: normalized,
     planNombre: plan.nombre,
     reference,
@@ -349,6 +350,7 @@ async function crearFuentePagoRenovable({
       type: 'CARD',
     });
   } catch (error) {
+    console.error('[DEBUG Wompi Error]:', JSON.stringify(error.response?.data, null, 2));
     const wompiMsg =
       error.response?.data?.error?.messages?.join?.(' ') ||
       error.response?.data?.error?.reason ||
@@ -593,6 +595,102 @@ async function procesarWebhookTransaccion(transaction) {
   return { processed: true, reason: 'status_updated', status: transaction.status };
 }
 
+/**
+ * Conciliación automática de PagosSuscripcion que siguen en estado PENDING
+ * pero que en Wompi ya cerraron en estado final distinto (APPROVED, DECLINED,
+ * ERROR, VOIDED). Diseñado para correr una vez al día como cron job o
+ * mediante endpoint manual.
+ *
+ * Criterio:
+ * - PagoSuscripcion.estado === 'PENDING'
+ * - createdAt sea anterior a `minutosAtras` minutos (default 60) para no
+ *   interferir con pagos en curso (3DS challenge puede demorar).
+ *
+ * Retorna resumen de lo procesado.
+ */
+async function conciliarPagosPendientes({ minutosAtras = 60 } = {}) {
+  const threshold = new Date(Date.now() - minutosAtras * 60 * 1000);
+  const pagosPendientes = await PagoSuscripcion.find({
+    estado: 'PENDING',
+    wompiTransactionId: { $exists: true, $ne: null },
+    createdAt: { $lte: threshold },
+  });
+
+  const resumen = {
+    total: pagosPendientes.length,
+    aprobados: 0,
+    fallidos: 0,
+    permanecenPending: 0,
+    error: 0,
+    idsError: [],
+  };
+
+  const conciliarUno = async (pago) => {
+    try {
+      const tx = await getTransactionPublic(pago.wompiTransactionId);
+      const estadoFinal = tx?.status;
+
+      if (estadoFinal === 'APPROVED' && pago.estado !== 'APPROVED') {
+        await activarSuscripcionPorPago({
+          empresaId: pago.empresa,
+          planId: pago.planId,
+          wompiTransactionId: pago.wompiTransactionId,
+          wompiReference: tx.reference || pago.wompiReference,
+          montoCents: tx.amount_in_cents || pago.montoCents,
+          respuestaWompi: tx,
+        });
+        if (pago.tipo === 'renovacion') {
+          await Suscripcion.findOneAndUpdate(
+            { empresa: pago.empresa },
+            { intentosCobroFallidos: 0 }
+          );
+        }
+        resumen.aprobados++;
+        return;
+      }
+
+      if (['DECLINED', 'ERROR', 'VOIDED'].includes(estadoFinal) && pago.estado !== estadoFinal) {
+        if (pago.tipo === 'renovacion') {
+          const suscripcion = await Suscripcion.findOne({ empresa: pago.empresa });
+          if (suscripcion && suscripcion.estado === 'activa') {
+            const nuevosIntentos = (suscripcion.intentosCobroFallidos || 0) + 1;
+            const nuevoEstado = nuevosIntentos >= 3 ? 'expirada' : 'past_due';
+            await Suscripcion.findByIdAndUpdate(suscripcion._id, {
+              estado: nuevoEstado,
+              intentosCobroFallidos: nuevosIntentos,
+            });
+            await Empresa.findByIdAndUpdate(pago.empresa, {
+              estadoSuscripcion: nuevoEstado,
+              ...(nuevoEstado === 'expirada' ? { plan: 'free_trial' } : {}),
+            });
+          }
+        }
+        await marcarPagoFallido(pago.wompiTransactionId, estadoFinal, tx);
+        resumen.fallidos++;
+        return;
+      }
+
+      resumen.permanecenPending++;
+    } catch (err) {
+      resumen.error++;
+      resumen.idsError.push(String(pago._id));
+      console.error(
+        `[Conciliacion] Error al conciliar pago ${pago.wompiTransactionId}:`,
+        err.message
+      );
+    }
+  };
+
+  // Conciliar en lotes pequeños para no saturar la API de Wompi.
+  const BATCH = 10;
+  for (let i = 0; i < pagosPendientes.length; i += BATCH) {
+    await Promise.all(pagosPendientes.slice(i, i + BATCH).map(conciliarUno));
+  }
+
+  console.log('[Conciliacion] Resumen:', resumen);
+  return resumen;
+}
+
 module.exports = {
   calcularFechaProximoCobro,
   getEmpresaId,
@@ -604,5 +702,6 @@ module.exports = {
   consultarEstadoFuentePago,
   procesarCobroMensual,
   procesarWebhookTransaccion,
+  conciliarPagosPendientes,
   isPaidPlan,
 };

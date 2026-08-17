@@ -13,6 +13,7 @@ const {
   getPaymentHistoryHandler,
   cancelSubscriptionHandler,
   reactivateSubscriptionHandler,
+  reconcileHandler,
 } = require('../controllers/suscripcionController');
 
 router.use(verifyToken);
@@ -29,5 +30,6 @@ router.get('/payment-sources/:id/status', getPaymentSourceStatusHandler);
 router.get('/payments', getPaymentHistoryHandler);
 router.post('/cancel', cancelSubscriptionHandler);
 router.post('/reactivate', reactivateSubscriptionHandler);
+router.post('/reconcile', reconcileHandler);
 
 module.exports = router;

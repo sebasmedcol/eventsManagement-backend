@@ -12,7 +12,9 @@ const {
   marcarPagoFallido,
   crearFuentePagoRenovable,
   consultarEstadoFuentePago,
+  conciliarPagosPendientes,
 } = require('../services/suscripcionService');
+const { ejecutarConciliacionPagos } = require('../jobs/conciliacionPagos');
 const { normalizePlanId, getPlanConfig, getPlanPriceCents } = require('../config/plansConfig');
 const PagoSuscripcion = require('../models/pagoSuscripcionModel');
 const Suscripcion = require('../models/suscripcionModel');
@@ -389,6 +391,35 @@ const reactivateSubscriptionHandler = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/subscriptions/reconcile
+ * Body opcional: { minutosAtras: 60, forzar: true }
+ *
+ * Dispara manualmente la conciliación de PagosSuscripcion en estado PENDING
+ * frente a la API de Wompi. Requiere admin principal/superadmin.
+ * Si no envía forzar o CRON_DRY_RUN=true, el job wrapper respeta el DRY_RUN
+ * a menos que `forzar: true` esté presente.
+ */
+const reconcileHandler = async (req, res) => {
+  try {
+    const minutosAtras = Number.isFinite(req.body?.minutosAtras) ? Number(req.body.minutosAtras) : 60;
+    const forzar = Boolean(req.body?.forzar);
+
+    const isDryRun = process.env.CRON_DRY_RUN === 'true' && !forzar;
+    const resumen = isDryRun
+      ? { modo: 'DRY_RUN', nota: 'Desactivar CRON_DRY_RUN o enviar forzar: true para ejecutar.' }
+      : await conciliarPagosPendientes({ minutosAtras });
+
+    res.json({ success: true, data: { ...resumen, minutosAtras, dryRun: isDryRun } });
+  } catch (error) {
+    console.error('[Subscriptions] reconcile:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al conciliar pagos pendientes.',
+    });
+  }
+};
+
 module.exports = {
   requireBillingAdmin,
   getAcceptanceTokensHandler,
@@ -401,4 +432,5 @@ module.exports = {
   getPaymentHistoryHandler,
   cancelSubscriptionHandler,
   reactivateSubscriptionHandler,
+  reconcileHandler,
 };
