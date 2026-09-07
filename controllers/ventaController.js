@@ -1,4 +1,5 @@
 const Venta = require('../models/ventaModel');
+const VentaArchivada = require('../models/ventaArchivadaModel');
 const Consecutivo = require('../models/consecutivoModel');
 const FacturaHasConsecutivo = require('../models/facturaHasConsecutivoModel');
 const { validarDisponibilidad } = require('../services/inventarioService');
@@ -104,6 +105,79 @@ const calcularFechasAlquiler = ({ eventoInicio, eventoFin, loadInInicio, loadOut
  * @route   GET /api/ventas
  * @access  Privado
  */
+const getVentasArchivables = async (req, res) => {
+  try {
+    const inicioAnio = new Date(new Date().getFullYear(), 0, 1);
+    const resultado = await Venta.countDocuments({
+      empresa: req.user.empresaId,
+      fecha: { $lt: inicioAnio },
+    });
+    res.json({ anioActual: new Date().getFullYear(), cantidad: resultado });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const archivarVentas = async (req, res) => {
+  try {
+    const anioActual = new Date().getFullYear();
+    const inicioAnio = new Date(anioActual, 0, 1);
+    const ventas = await Venta.find({ empresa: req.user.empresaId, fecha: { $lt: inicioAnio } }).lean();
+
+    if (!ventas.length) return res.json({ archivadas: 0, anioActual });
+
+    const documentos = ventas.map((venta) => ({
+      ...venta,
+      _id: undefined,
+      ventaOriginal: venta._id,
+      anioVenta: new Date(venta.fecha).getFullYear(),
+      fechaArchivado: new Date(),
+    }));
+
+    await VentaArchivada.bulkWrite(
+      documentos.map((documento) => ({
+        updateOne: {
+          filter: { empresa: req.user.empresaId, ventaOriginal: documento.ventaOriginal },
+          update: { $setOnInsert: documento },
+          upsert: true,
+        },
+      }))
+    );
+
+    const ids = ventas.map((venta) => venta._id);
+    const resultado = await Venta.deleteMany({ _id: { $in: ids }, empresa: req.user.empresaId, fecha: { $lt: inicioAnio } });
+    res.json({ archivadas: resultado.deletedCount, anioActual });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getAniosArchivados = async (req, res) => {
+  try {
+    const anios = await VentaArchivada.distinct('anioVenta', { empresa: req.user.empresaId });
+    res.json(anios.sort((a, b) => b - a));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getVentasArchivadas = async (req, res) => {
+  try {
+    const anio = Number(req.query.anio);
+    if (!Number.isInteger(anio) || anio < 1900 || anio > 9999) {
+      return res.status(400).json({ message: 'Debe seleccionar un año válido' });
+    }
+    const ventas = await VentaArchivada.find({ empresa: req.user.empresaId, anioVenta: anio })
+      .populate('cliente', 'nombreCompleto telefono direccion')
+      .populate({ path: 'facturaHasConsecutivo', populate: [{ path: 'factura' }, { path: 'consecutivo' }] })
+      .populate('productos.producto')
+      .sort({ fecha: -1 });
+    res.json(ventas);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 const getVentas = async (req, res) => {
   try {
     const ventas = await Venta.find({ empresa: req.user.empresaId })
@@ -650,4 +724,8 @@ module.exports = {
   deleteVenta,
   anularVenta,
   actualizarVencidas,
+  getVentasArchivables,
+  archivarVentas,
+  getAniosArchivados,
+  getVentasArchivadas,
 };
