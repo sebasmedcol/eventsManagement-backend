@@ -126,13 +126,18 @@ const archivarVentas = async (req, res) => {
 
     if (!ventas.length) return res.json({ archivadas: 0, anioActual });
 
-    const documentos = ventas.map((venta) => ({
-      ...venta,
-      _id: undefined,
-      ventaOriginal: venta._id,
-      anioVenta: new Date(venta.fecha).getFullYear(),
-      fechaArchivado: new Date(),
-    }));
+    const documentos = ventas.map((venta) => {
+      // Los timestamps de la venta original no deben viajar al upsert:
+      // Mongoose administra createdAt/updatedAt en la colección archivada.
+      const { _id, createdAt, updatedAt, __v, ...datosVenta } = venta;
+
+      return {
+        ...datosVenta,
+        ventaOriginal: _id,
+        anioVenta: new Date(venta.fecha).getFullYear(),
+        fechaArchivado: new Date(),
+      };
+    });
 
     await VentaArchivada.bulkWrite(
       documentos.map((documento) => ({
