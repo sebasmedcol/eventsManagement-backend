@@ -1,4 +1,5 @@
 const Producto = require('../models/productoModel');
+const { consumeResource } = require('../services/usageLimitService');
 
 const normalizarTexto = (value) => {
   if (value == null) return '';
@@ -7,6 +8,31 @@ const normalizarTexto = (value) => {
 
 const tiposServicioPermitidos = ['Alquiler', 'Venta'];
 const tiposCobroPermitidos = ['unidad', 'hora'];
+
+const buildConsumptionErrorPayload = ({ code, periodEnd }) => {
+  if (code === 'ACTIVE_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Has alcanzado el límite de productos activos de tu plan. Desactiva productos o mejora tu plan para continuar.',
+    };
+  }
+
+  if (code === 'PERIOD_CREATION_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Ya consumiste todas las altas de productos disponibles para el período actual. Debes esperar la renovación o mejorar tu plan.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  return {
+    code: code || 'LIMIT_REACHED',
+    message: 'No fue posible registrar el consumo del límite de productos.',
+    periodEnd: periodEnd || null,
+  };
+};
 
 /**
  * @desc    Obtener todos los productos
@@ -107,6 +133,29 @@ const createProducto = async (req, res) => {
       empresa: req.user.empresaId,
       codigoSKU: normalizarTexto(codigoSKU),
     });
+
+    try {
+      await consumeResource({
+        empresaId: req.user.empresaId,
+        resource: 'producto',
+        operation: 'create',
+      });
+    } catch (consumeError) {
+      await Producto.findByIdAndDelete(producto._id);
+
+      if (['ACTIVE_LIMIT_REACHED', 'PERIOD_CREATION_LIMIT_REACHED'].includes(consumeError.code)) {
+        const payload = buildConsumptionErrorPayload({
+          code: consumeError.code,
+          periodEnd: req.limitInfo?.currentPeriod?.periodEnd,
+        });
+        return res.status(403).json({
+          success: false,
+          ...payload,
+        });
+      }
+
+      throw consumeError;
+    }
 
     res.status(201).json(producto);
   } catch (error) {

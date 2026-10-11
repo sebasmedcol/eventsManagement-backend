@@ -1,6 +1,32 @@
 const EventoPremium = require('../models/eventoPremiumModel');
 const Usuario = require('../models/usuarioModel');
 const EventoFicha = require('../models/eventoFichaModel');
+const { consumeResource } = require('../services/usageLimitService');
+
+const buildConsumptionErrorPayload = ({ code, periodEnd }) => {
+  if (code === 'PERIOD_CREATION_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Ya consumiste todas las altas de eventos disponibles para el período actual. Debes esperar la renovación o mejorar tu plan.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  if (code === 'ACTIVE_LIMIT_REACHED') {
+    return {
+      code,
+      message: 'Has alcanzado el límite activo permitido por tu plan para este recurso.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  return {
+    code: code || 'LIMIT_REACHED',
+    message: 'No fue posible registrar el consumo del límite de eventos.',
+    periodEnd: periodEnd || null,
+  };
+};
 
 const getEventosPremium = async (req, res) => {
   try {
@@ -66,6 +92,29 @@ const createEventoPremium = async (req, res) => {
       responsable,
       estado: true,
     });
+
+    try {
+      await consumeResource({
+        empresaId: req.user.empresaId,
+        resource: 'evento',
+        operation: 'create',
+      });
+    } catch (consumeError) {
+      await EventoPremium.findByIdAndDelete(evento._id);
+
+      if (['ACTIVE_LIMIT_REACHED', 'PERIOD_CREATION_LIMIT_REACHED'].includes(consumeError.code)) {
+        const payload = buildConsumptionErrorPayload({
+          code: consumeError.code,
+          periodEnd: req.limitInfo?.currentPeriod?.periodEnd,
+        });
+        return res.status(403).json({
+          success: false,
+          ...payload,
+        });
+      }
+
+      throw consumeError;
+    }
 
     const completo = await EventoPremium.findById(evento._id)
       .populate('cliente', 'nombreCompleto telefono direccion')

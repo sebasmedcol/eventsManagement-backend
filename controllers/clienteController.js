@@ -1,4 +1,5 @@
 const Cliente = require('../models/clienteModel');
+const { consumeResource } = require('../services/usageLimitService');
 
 const normalizarTexto = (value) => {
   if (value == null) return '';
@@ -15,6 +16,31 @@ const validarEmail = (email) => {
 };
 
 const documentoTiposPermitidos = ['cedula', 'cedula_extranjeria', 'ppt', 'rut', 'nit'];
+
+const buildConsumptionErrorPayload = ({ code, periodEnd }) => {
+  if (code === 'ACTIVE_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Has alcanzado el límite de clientes activos de tu plan. Desactiva clientes o mejora tu plan para continuar.',
+    };
+  }
+
+  if (code === 'PERIOD_CREATION_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Ya consumiste todas las altas de clientes disponibles para el período actual. Debes esperar la renovación o mejorar tu plan.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  return {
+    code: code || 'LIMIT_REACHED',
+    message: 'No fue posible registrar el consumo del límite de clientes.',
+    periodEnd: periodEnd || null,
+  };
+};
 
 /**
  * @desc    Obtener todos los clientes
@@ -134,6 +160,29 @@ const createCliente = async (req, res) => {
       estado: typeof estado === 'boolean' ? estado : true,
       empresa: req.user.empresaId,
     });
+
+    try {
+      await consumeResource({
+        empresaId: req.user.empresaId,
+        resource: 'cliente',
+        operation: 'create',
+      });
+    } catch (consumeError) {
+      await Cliente.findByIdAndDelete(cliente._id);
+
+      if (['ACTIVE_LIMIT_REACHED', 'PERIOD_CREATION_LIMIT_REACHED'].includes(consumeError.code)) {
+        const payload = buildConsumptionErrorPayload({
+          code: consumeError.code,
+          periodEnd: req.limitInfo?.currentPeriod?.periodEnd,
+        });
+        return res.status(403).json({
+          success: false,
+          ...payload,
+        });
+      }
+
+      throw consumeError;
+    }
 
     res.status(201).json(cliente);
   } catch (error) {

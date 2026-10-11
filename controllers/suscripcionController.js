@@ -7,6 +7,7 @@ const { wompiConfig } = require('../config/wompiConfig');
 const {
   getEmpresaId,
   iniciarCheckout,
+  validatePlanChange,
   crearPagoCon3DS,
   activarSuscripcionPorPago,
   marcarPagoFallido,
@@ -83,11 +84,12 @@ const checkoutHandler = async (req, res) => {
     });
   } catch (error) {
     console.error('[Subscriptions] checkout:', error.message);
-    const status = error.code === 'INVALID_PLAN' ? 400 : 500;
+    const status = ['INVALID_PLAN', 'DOWNGRADE_NOT_ALLOWED'].includes(error.code) ? 400 : 500;
     res.status(status).json({
       success: false,
       message: error.message,
       code: error.code,
+      details: error.details,
       wompiResponse: error.wompiResponse,
     });
   }
@@ -220,6 +222,8 @@ const checkoutPreviewHandler = async (req, res) => {
   try {
     const normalized = normalizePlanId(req.params.planId);
     const plan = getPlanConfig(normalized);
+    const empresaId = getEmpresaId(req.user);
+    const planChange = await validatePlanChange(empresaId, normalized);
     res.json({
       success: true,
       data: {
@@ -228,10 +232,16 @@ const checkoutPreviewHandler = async (req, res) => {
         precioCents: getPlanPriceCents(normalized),
         precioFormatted: getPlanPriceCents(normalized) / 100,
         currency: 'COP',
+        planChange,
       },
     });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    res.status(400).json({
+      success: false,
+      message: error.message,
+      code: error.code,
+      details: error.details,
+    });
   }
 };
 

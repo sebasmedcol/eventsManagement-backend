@@ -8,6 +8,7 @@ const PagoSuscripcion = require('../models/pagoSuscripcionModel');
 const { sendEmail } = require('./emailService');
 const {
   getPlanConfig,
+  getLimitsForPlan,
   normalizePlanId,
   getPlanPriceCents,
   isPaidPlan,
@@ -21,8 +22,16 @@ const {
   createRecurringTransaction,
   getTransactionPublic,
 } = require('./wompiService');
+const { rotateUsagePeriod, getUsageSnapshot } = require('./usageLimitService');
 
 const PAID_PLANS = ['basico', 'pro', 'premium'];
+const PLAN_TIER_ORDER = ['free_trial', 'basico', 'pro', 'premium'];
+const RESOURCE_LABELS = {
+  clientes: 'clientes',
+  productos: 'productos',
+  usuarios: 'usuarios',
+  consecutivos: 'consecutivos',
+};
 
 function calcularFechaProximoCobro(desde = new Date()) {
   const fecha = new Date(desde);
@@ -32,6 +41,87 @@ function calcularFechaProximoCobro(desde = new Date()) {
 
 function getEmpresaId(user) {
   return user?.empresaId || user?.empresa;
+}
+
+function getPlanChangeType(currentPlanId, targetPlanId) {
+  const currentIndex = PLAN_TIER_ORDER.indexOf(normalizePlanId(currentPlanId));
+  const targetIndex = PLAN_TIER_ORDER.indexOf(normalizePlanId(targetPlanId));
+
+  if (currentIndex === targetIndex) return 'same_plan';
+  if (currentIndex < targetIndex) return 'upgrade';
+  return 'downgrade';
+}
+
+/**
+ * Valida si una empresa puede pasar a un plan inferior sin violar topes activos.
+ * No elimina datos ni modifica el plan; solo entrega el diagnóstico para UI/checkout.
+ */
+async function validatePlanChange(empresaId, targetPlanId) {
+  const normalizedTarget = normalizePlanId(targetPlanId);
+  if (!PAID_PLANS.includes(normalizedTarget)) {
+    const err = new Error('Plan no válido para cambio de suscripción.');
+    err.code = 'INVALID_PLAN';
+    throw err;
+  }
+
+  const empresa = await Empresa.findById(empresaId);
+  if (!empresa) {
+    const err = new Error('Empresa no encontrada.');
+    err.code = 'EMPRESA_NOT_FOUND';
+    throw err;
+  }
+
+  const currentPlanId = normalizePlanId(empresa.plan);
+  const currentPlan = getPlanConfig(currentPlanId);
+  const targetPlan = getPlanConfig(normalizedTarget);
+  const targetPlanLimits = getLimitsForPlan(normalizedTarget);
+  const changeType = getPlanChangeType(currentPlanId, normalizedTarget);
+
+  if (changeType !== 'downgrade') {
+    return {
+      allowed: true,
+      changeType,
+      currentPlanId,
+      currentPlanNombre: currentPlan.nombre,
+      targetPlanId: normalizedTarget,
+      targetPlanNombre: targetPlan.nombre,
+      exceededResources: [],
+      message: null,
+    };
+  }
+
+  const usageSnapshot = await getUsageSnapshot(empresaId, { empresa });
+  const exceededResources = Object.entries(usageSnapshot.resources || {})
+    .filter(([, resource]) => resource.activeLimit != null && resource.activeCount != null)
+    .map(([limitKey, resource]) => {
+      const targetActiveLimit = targetPlanLimits?.[limitKey]?.activeLimit ?? null;
+      return {
+        limitKey,
+        displayName: RESOURCE_LABELS[limitKey] || limitKey,
+        currentActive: resource.activeCount,
+        targetActiveLimit,
+        exceededBy:
+          targetActiveLimit == null || targetActiveLimit === -1
+            ? 0
+            : Math.max(0, resource.activeCount - targetActiveLimit),
+      };
+    })
+    .filter((resource) => resource.targetActiveLimit != null && resource.targetActiveLimit !== -1)
+    .filter((resource) => resource.currentActive > resource.targetActiveLimit);
+
+  const allowed = exceededResources.length === 0;
+  return {
+    allowed,
+    changeType,
+    currentPlanId,
+    currentPlanNombre: currentPlan.nombre,
+    targetPlanId: normalizedTarget,
+    targetPlanNombre: targetPlan.nombre,
+    exceededResources,
+    message: allowed
+      ? null
+      : `No puedes bajar al plan ${targetPlan.nombre} porque superas algunos límites activos.`,
+  };
 }
 
 async function iniciarCheckout(empresaId, planId) {
@@ -46,6 +136,14 @@ async function iniciarCheckout(empresaId, planId) {
   if (!empresa) {
     const err = new Error('Empresa no encontrada.');
     err.code = 'EMPRESA_NOT_FOUND';
+    throw err;
+  }
+
+  const planChange = await validatePlanChange(empresaId, normalized);
+  if (!planChange.allowed) {
+    const err = new Error(planChange.message || 'No puedes cambiar al plan seleccionado todavía.');
+    err.code = 'DOWNGRADE_NOT_ALLOWED';
+    err.details = planChange;
     throw err;
   }
 
@@ -66,6 +164,7 @@ async function iniciarCheckout(empresaId, planId) {
     currency: 'COP',
     signature,
     customerEmail: empresa.email,
+    planChange,
   };
 }
 
@@ -186,6 +285,11 @@ async function activarSuscripcionPorPago({
   const ahora = new Date();
   const proximoCobro = calcularFechaProximoCobro(ahora);
   const suscripcionActual = await Suscripcion.findOne({ empresa: empresaId });
+  const pagoRelacionado = wompiTransactionId
+    ? await PagoSuscripcion.findOne({ wompiTransactionId })
+    : wompiReference
+    ? await PagoSuscripcion.findOne({ wompiReference })
+    : null;
 
   const lastFour =
     respuestaWompi?.payment_method?.extra?.last_four ||
@@ -193,7 +297,7 @@ async function activarSuscripcionPorPago({
     null;
   const brand = respuestaWompi?.payment_method?.extra?.brand || null;
 
-  await Suscripcion.findOneAndUpdate(
+  const suscripcionActualizada = await Suscripcion.findOneAndUpdate(
     { empresa: empresaId },
     {
       planId: normalized,
@@ -245,6 +349,25 @@ async function activarSuscripcionPorPago({
       }
     );
   }
+
+  await rotateUsagePeriod(empresaId, {
+    planId: normalized,
+    periodStart: ahora,
+    periodEnd: proximoCobro,
+    suscripcionId: suscripcionActualizada?._id || null,
+    reason:
+      pagoRelacionado?.tipo === 'renovacion'
+        ? 'renewal_approved'
+        : pagoRelacionado?.tipo === 'primer_pago'
+        ? 'first_payment_approved'
+        : 'payment_approved',
+    metadata: {
+      wompiTransactionId: wompiTransactionId || respuestaWompi?.id || null,
+      wompiReference: wompiReference || respuestaWompi?.reference || null,
+      pagoTipo: pagoRelacionado?.tipo || null,
+      previousPlanId: suscripcionActual?.planId || null,
+    },
+  });
 }
 
 async function marcarPagoFallido(wompiTransactionId, estado, respuestaWompi) {
@@ -694,6 +817,7 @@ async function conciliarPagosPendientes({ minutosAtras = 60 } = {}) {
 module.exports = {
   calcularFechaProximoCobro,
   getEmpresaId,
+  validatePlanChange,
   iniciarCheckout,
   crearPagoCon3DS,
   activarSuscripcionPorPago,

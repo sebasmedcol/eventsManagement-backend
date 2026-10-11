@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const Usuario = require('../models/usuarioModel');
 const Empresa = require('../models/empresaModel');
 const { inicializarRolesEmpresa } = require('./rolController');
+const { createInitialUsagePeriod } = require('../services/usageLimitService');
 
 const normalizarTexto = (value) => {
   if (value == null) return '';
@@ -185,6 +186,11 @@ const register = async (req, res) => {
       solicitudToken,
       solicitudExpira,
       fechaCreacion: new Date(),
+    });
+
+    await createInitialUsagePeriod(empresa._id, {
+      empresa,
+      createdFrom: 'auth/register',
     });
 
     const salt = await bcrypt.genSalt(10);

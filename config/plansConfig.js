@@ -8,6 +8,44 @@
  * - BÁSICO: se activan roles y permisos, se desactiva configuracion.
  */
 
+const buildDualLimit = ({ activeLimit = null, periodLimit = null }) => ({
+  activeLimit,
+  periodLimit,
+  unlimited: activeLimit === -1 || periodLimit === -1,
+});
+
+const buildPlanUsageLimits = (limites = {}) => ({
+  ...(limites.empresas != null
+    ? { empresas: buildDualLimit({ activeLimit: limites.empresas }) }
+    : {}),
+  clientes: buildDualLimit({
+    activeLimit: limites.clientes ?? 0,
+    periodLimit: limites.clientes ?? 0,
+  }),
+  productos: buildDualLimit({
+    activeLimit: limites.productos ?? 0,
+    periodLimit: limites.productos ?? 0,
+  }),
+  ventas: buildDualLimit({
+    periodLimit: limites.ventas ?? 0,
+  }),
+  eventos: buildDualLimit({
+    periodLimit: limites.eventos ?? 0,
+  }),
+  cotizaciones: buildDualLimit({
+    periodLimit: limites.cotizaciones ?? 0,
+  }),
+  usuarios: buildDualLimit({
+    activeLimit: limites.usuarios ?? 0,
+  }),
+  consecutivos: buildDualLimit({
+    activeLimit: limites.consecutivos ?? 0,
+  }),
+  facturas: buildDualLimit({
+    periodLimit: limites.facturas ?? 0,
+  }),
+});
+
 const PLANS_CONFIG = {
   // Plan de prueba gratuita (7 días) — acceso TOTAL para evaluar la plataforma
   free_trial: {
@@ -246,6 +284,10 @@ const PLANS_CONFIG = {
   },
 };
 
+Object.values(PLANS_CONFIG).forEach((planConfig) => {
+  planConfig.limits = buildPlanUsageLimits(planConfig.limites);
+});
+
 // Mapeo de rutas de sidebar a módulos
 const ROUTE_TO_MODULE_MAP = {
   '/dashboard': 'dashboard',
@@ -377,6 +419,16 @@ function getResourceLimit(planId, resourceType) {
   return plan.limites[limitKey] ?? 0;
 }
 
+function getLimitsForPlan(planId) {
+  const plan = getPlanConfig(planId);
+  const limits = plan.limits || {};
+
+  return Object.keys(limits).reduce((acc, resourceKey) => {
+    acc[resourceKey] = { ...limits[resourceKey] };
+    return acc;
+  }, {});
+}
+
 function checkResourceLimit(planId, resourceType, currentCount) {
   const limit = getResourceLimit(planId, resourceType);
   const resourceName = RESOURCE_NAMES[RESOURCE_TO_LIMIT_MAP[resourceType] || resourceType] || resourceType;
@@ -490,6 +542,7 @@ module.exports = {
   isModuleAvailable,
   isFeatureAvailable,
   getResourceLimit,
+  getLimitsForPlan,
   checkResourceLimit,
   getAllLimitsWithUsage,
   calculateTrialStatus,

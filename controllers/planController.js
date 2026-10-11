@@ -21,9 +21,48 @@ const {
 const { getAllResourceUsage } = require('../middlewares/planMiddleware');
 const Empresa = require('../models/empresaModel');
 const Suscripcion = require('../models/suscripcionModel');
+const { getUsageSnapshot } = require('../services/usageLimitService');
 
 /** Devuelve true si la empresa es la cuenta SuperAdmin global */
 const esSuperAdmin = (empresa) => empresa && empresa.nombre === 'SuperAdmin';
+
+const buildEnhancedLimits = (planId, legacyUsage, usageSnapshot) => {
+  const baseLimits = getAllLimitsWithUsage(planId, legacyUsage);
+  const snapshotResources = usageSnapshot?.resources || {};
+
+  return Object.entries(baseLimits).reduce((acc, [resourceKey, limitInfo]) => {
+    const dual = snapshotResources[resourceKey];
+    const activeDefined = dual && dual.activeCount != null;
+    const periodDefined = dual && dual.periodUsage != null;
+    const canCreateByActive = dual?.activeUnlimited || dual?.activeCount == null
+      ? true
+      : dual.activeCount < dual.activeLimit;
+    const canCreateByPeriod = dual?.periodUnlimited || dual?.periodUsage == null
+      ? true
+      : dual.periodUsage < dual.periodLimit;
+
+    acc[resourceKey] = {
+      ...limitInfo,
+      usageModel: activeDefined || periodDefined ? 'dual' : 'simple',
+      activeCount: activeDefined ? dual.activeCount : limitInfo.current,
+      activeLimit: activeDefined ? dual.activeLimit : limitInfo.limit,
+      activeUnlimited: activeDefined ? dual.activeUnlimited : limitInfo.unlimited,
+      remainingActive: activeDefined ? dual.remainingActive : limitInfo.remaining,
+      activePercentage: activeDefined ? dual.activePercentage : limitInfo.percentage,
+      periodUsage: periodDefined ? dual.periodUsage : null,
+      periodLimit: periodDefined ? dual.periodLimit : null,
+      periodUnlimited: periodDefined ? dual.periodUnlimited : false,
+      remainingPeriod: periodDefined ? dual.remainingPeriod : null,
+      periodPercentage: periodDefined ? dual.periodPercentage : 0,
+      canCreate:
+        (activeDefined || periodDefined)
+          ? Boolean(canCreateByActive && canCreateByPeriod)
+          : limitInfo.canCreate,
+    };
+
+    return acc;
+  }, {});
+};
 
 /**
  * GET /api/config/plan-info
@@ -81,7 +120,8 @@ const getPlanInfo = async (req, res) => {
     const planId = normalizePlanId(empresa.plan);
     const planConfig = getPlanConfig(planId);
     const usage = await getAllResourceUsage(empresaId);
-    const limitsWithUsage = getAllLimitsWithUsage(planId, usage);
+    const usageSnapshot = await getUsageSnapshot(empresaId, { empresa });
+    const limitsWithUsage = buildEnhancedLimits(planId, usage, usageSnapshot);
 
     let trialStatus = null;
     if (planId === 'free_trial' && empresa.fechaCreacion) {
@@ -179,7 +219,12 @@ const getPlanInfo = async (req, res) => {
         }, {}),
         limites: limitsWithUsage,
         trial: trialStatus,
-        periodoActual,
+        periodoActual: {
+          ...periodoActual,
+          billingPeriodId: usageSnapshot.currentPeriod?._id || null,
+          periodStart: usageSnapshot.currentPeriod?.periodStart || null,
+          periodEnd: usageSnapshot.currentPeriod?.periodEnd || periodoActual?.fechaFin || null,
+        },
         upgrade: recommendedPlan ? {
           recomendado: true,
           planId: recommendedUpgrade,
@@ -266,15 +311,35 @@ const checkResourceLimitEndpoint = async (req, res) => {
 
     const planId = normalizePlanId(empresa.plan);
     const planConfig = getPlanConfig(planId);
+    const usageSnapshot = await getUsageSnapshot(empresaId, { empresa });
+    const resourceMap = {
+      cliente: 'clientes',
+      producto: 'productos',
+      venta: 'ventas',
+      cotizacion: 'cotizaciones',
+      evento: 'eventos',
+      usuario: 'usuarios',
+    };
+    const dual = usageSnapshot.resources?.[resourceMap[resourceType]];
     const { getResourceCount } = require('../middlewares/planMiddleware');
     const { checkResourceLimit: checkLimit } = require('../config/plansConfig');
 
     const currentCount = await getResourceCount(resourceType, empresaId);
-    const limitCheck   = checkLimit(planId, resourceType, currentCount);
+    const limitCheck = checkLimit(planId, resourceType, currentCount);
 
     res.json({
       success: true,
-      data: { resourceType, planId, planNombre: planConfig.nombre, ...limitCheck },
+      data: {
+        resourceType,
+        planId,
+        planNombre: planConfig.nombre,
+        ...limitCheck,
+        activeCount: dual?.activeCount ?? currentCount,
+        activeLimit: dual?.activeLimit ?? limitCheck.limit,
+        periodUsage: dual?.periodUsage ?? null,
+        periodLimit: dual?.periodLimit ?? null,
+        periodEnd: usageSnapshot.currentPeriod?.periodEnd || null,
+      },
     });
   } catch (error) {
     console.error('Error al verificar límite:', error);

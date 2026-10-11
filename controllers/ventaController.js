@@ -4,6 +4,7 @@ const Consecutivo = require('../models/consecutivoModel');
 const FacturaHasConsecutivo = require('../models/facturaHasConsecutivoModel');
 const { validarDisponibilidad } = require('../services/inventarioService');
 const Producto = require('../models/productoModel');
+const { consumeResource } = require('../services/usageLimitService');
 
 const toNumber = (value, fallback = 0) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -20,6 +21,31 @@ const parseDateOrNull = (value) => {
 };
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const buildConsumptionErrorPayload = ({ code, periodEnd }) => {
+  if (code === 'PERIOD_CREATION_LIMIT_REACHED') {
+    return {
+      code,
+      message:
+        'Ya consumiste todas las ventas disponibles para el período actual. Debes esperar la renovación o mejorar tu plan.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  if (code === 'ACTIVE_LIMIT_REACHED') {
+    return {
+      code,
+      message: 'Has alcanzado el límite activo permitido por tu plan para este recurso.',
+      periodEnd: periodEnd || null,
+    };
+  }
+
+  return {
+    code: code || 'LIMIT_REACHED',
+    message: 'No fue posible registrar el consumo del límite de ventas.',
+    periodEnd: periodEnd || null,
+  };
+};
 
 const formatDuration = (minutes) => {
   const total = Math.max(0, Math.floor(minutes));
@@ -390,6 +416,35 @@ const createVenta = async (req, res) => {
       estadoPago: estadoPagoCalc.estadoPago,
       fechaLimitePago: estadoPagoCalc.fechaLimitePago,
     });
+
+    try {
+      await consumeResource({
+        empresaId: req.user.empresaId,
+        resource: 'venta',
+        operation: 'create',
+      });
+    } catch (consumeError) {
+      await Venta.findByIdAndDelete(venta._id);
+      if (relacion?.consecutivo?._id) {
+        await Consecutivo.findOneAndUpdate(
+          { _id: relacion.consecutivo._id, empresa: req.user.empresaId },
+          { $inc: { contador: -1 } }
+        );
+      }
+
+      if (['ACTIVE_LIMIT_REACHED', 'PERIOD_CREATION_LIMIT_REACHED'].includes(consumeError.code)) {
+        const payload = buildConsumptionErrorPayload({
+          code: consumeError.code,
+          periodEnd: req.limitInfo?.currentPeriod?.periodEnd,
+        });
+        return res.status(403).json({
+          success: false,
+          ...payload,
+        });
+      }
+
+      throw consumeError;
+    }
 
     // Descontar stock para ventas tipo 'Venta'
   if (tipoDeServicio === 'Venta') {

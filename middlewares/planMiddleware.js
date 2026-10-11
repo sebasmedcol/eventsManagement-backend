@@ -8,7 +8,7 @@
 
 const {
   getPlanConfig,
-  checkResourceLimit,
+  checkResourceLimit: checkStaticResourceLimit,
   isModuleAvailable,
   isFeatureAvailable,
   calculateTrialStatus,
@@ -17,6 +17,9 @@ const {
   MODULE_NAMES,
   FEATURE_NAMES,
 } = require('../config/plansConfig');
+const {
+  checkResourceLimit: checkUsageResourceLimit,
+} = require('../services/usageLimitService');
 
 const Cliente      = require('../models/clienteModel');
 const Producto     = require('../models/productoModel');
@@ -66,6 +69,30 @@ async function getAllResourceUsage(empresaId) {
   });
   await Promise.all(countPromises);
   return usage;
+}
+
+const DUAL_LIMIT_RESOURCES = new Set(['cliente', 'producto', 'venta', 'cotizacion', 'evento', 'usuario']);
+
+function buildDualLimitMessage({ resourceType, reason, planName }) {
+  const resourceLabels = {
+    cliente: 'clientes',
+    producto: 'productos',
+    venta: 'ventas',
+    cotizacion: 'cotizaciones',
+    evento: 'eventos',
+    usuario: 'usuarios',
+  };
+  const resourceLabel = resourceLabels[resourceType] || resourceType;
+
+  if (reason === 'ACTIVE_LIMIT_REACHED') {
+    return `Has alcanzado el límite de ${resourceLabel} activos para tu plan ${planName}. Desactiva registros o mejora tu plan para continuar.`;
+  }
+
+  if (reason === 'PERIOD_CREATION_LIMIT_REACHED') {
+    return `Ya consumiste todas las altas u operaciones de ${resourceLabel} disponibles en el período actual de tu plan ${planName}. Debes esperar la renovación o mejorar el plan.`;
+  }
+
+  return `No fue posible validar el límite de ${resourceLabel} para tu plan ${planName}.`;
 }
 
 /** Devuelve true si la empresa es la cuenta SuperAdmin global */
@@ -186,8 +213,44 @@ const estadoSus = empresa.estadoSuscripcion;
         }
       }
 
+      if (DUAL_LIMIT_RESOURCES.has(resourceType)) {
+        const dualCheck = await checkUsageResourceLimit({
+          empresaId,
+          resource: resourceType,
+          operation: 'create',
+        });
+
+        if (!dualCheck.allowed) {
+          return res.status(403).json({
+            success: false,
+            code: dualCheck.reason,
+            reason: dualCheck.reason,
+            message: buildDualLimitMessage({
+              resourceType,
+              reason: dualCheck.reason,
+              planName: planConfig.nombre,
+            }),
+            resourceType,
+            planId: dualCheck.planId,
+            planName: planConfig.nombre,
+            activeLimit: dualCheck.activeLimit,
+            activeCount: dualCheck.activeCount,
+            periodLimit: dualCheck.periodLimit,
+            periodUsage: dualCheck.periodUsage,
+            periodEnd: dualCheck.currentPeriod?.periodEnd || null,
+          });
+        }
+
+        req.limitInfo = {
+          resourceType,
+          ...dualCheck,
+          source: 'usagePeriod',
+        };
+        return next();
+      }
+
       const currentCount = await getResourceCount(resourceType, empresaId);
-      const limitCheck   = checkResourceLimit(planId, resourceType, currentCount);
+      const limitCheck   = checkStaticResourceLimit(planId, resourceType, currentCount);
 
       if (!limitCheck.allowed) {
         return res.status(403).json({

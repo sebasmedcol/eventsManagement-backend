@@ -8,6 +8,7 @@ const { registrarCobrosMensuales } = require('./cobrosMensuales');
 const { registrarReintentosPago } = require('./reintentosPago');
 const { registrarRecordatoriosPago } = require('./recordatoriosPago');
 const { registrarConciliacionPagos } = require('./conciliacionPagos');
+const { registrarCierrePeriodosUso } = require('./cierrePeriodosUso');
 
 function initJobs() {
   const enabled = process.env.ENABLE_CRON_JOBS === 'true';
@@ -18,6 +19,7 @@ function initJobs() {
   }
 
   console.log('[Jobs] Iniciando cron jobs...');
+  registrarCierrePeriodosUso();
   registrarConciliacionPagos();
   registrarCobrosMensuales();
   registrarReintentosPago();
